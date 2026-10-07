@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "note": "Example deployment. capability: 0 mechanical, 1 routine, 2 demanding, 3 coupled/review, 4 frontier. cost_tier orders profiles by expected cost per task (0 cheapest). Copy, trim to what you are authorized to call, and keep it honest.",
+  "profiles": [
+    {"id": "luna-low", "model": "gpt-6-luna", "provider": "openai", "effort": "low", "capability": 0, "cost_tier": 0, "phases": ["work"]},
+    {"id": "sol-medium", "model": "gpt-6-sol", "provider": "openai", "effort": "medium", "capability": 1, "cost_tier": 1, "phases": ["work"]},
+    {"id": "sonnet-medium", "model": "claude-sonnet-5-5", "provider": "anthropic", "effort": "medium", "capability": 1, "cost_tier": 1, "phases": ["work"], "vision": true},
+    {"id": "sol-high", "model": "gpt-6-sol", "provider": "openai", "effort": "high", "capability": 2, "cost_tier": 2, "phases": ["work"]},
+    {"id": "sonnet-high", "model": "claude-sonnet-5-5", "provider": "anthropic", "effort": "high", "capability": 2, "cost_tier": 2, "phases": ["work"], "vision": true},
+    {"id": "flash-high", "model": "gemini-3.8-flash", "provider": "google", "effort": "high", "capability": 2, "cost_tier": 1, "phases": ["work"], "vision": true},
+    {"id": "sol61-high", "model": "gpt-6.1-sol", "provider": "openai", "effort": "high", "capability": 3, "cost_tier": 3, "phases": ["work", "review"]},
+    {"id": "opus-high", "model": "claude-opus-5-5", "provider": "anthropic", "effort": "high", "capability": 4, "cost_tier": 4, "phases": ["work", "review"], "vision": true},
+    {"id": "astra-high", "model": "gpt-6-astra", "provider": "openai", "effort": "high", "capability": 4, "cost_tier": 5, "phases": ["work", "review"]}
+  ],
+  "budgets": {
+    "economy": {"max_cost_tier": 2},
+    "standard": {"max_cost_tier": 4},
+    "premium": {"max_cost_tier": 5},
+    "default": {"max_cost_tier": 4}
+  }
+}

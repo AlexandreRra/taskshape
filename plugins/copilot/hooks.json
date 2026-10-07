@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "exec": "node",
+        "args": ["--no-warnings", "--experimental-strip-types", "hooks/sessionstart.ts"],
+        "timeoutSec": 10
+      }
+    ],
+    "preToolUse": [
+      {
+        "type": "command",
+        "exec": "node",
+        "args": ["--no-warnings", "--experimental-strip-types", "hooks/pretooluse.ts"],
+        "matcher": "^task$",
+        "timeoutSec": 30
+      }
+    ],
+    "subagentStop": [
+      {
+        "type": "command",
+        "exec": "node",
+        "args": ["--no-warnings", "--experimental-strip-types", "hooks/subagentstop.ts"],
+        "timeoutSec": 15
+      }
+    ]
+  }
+}

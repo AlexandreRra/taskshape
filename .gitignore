@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+build/
+dist/
+# local checkpoints, datasets, reports and records never go to git
+checkpoints/
+lab/
+records/
+*.safetensors
+.hub/
+# engine-generated editor types inside plugin folders
+plugins/*/.claude-plugin/types/

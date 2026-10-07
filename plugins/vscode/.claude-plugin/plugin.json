@@ -1,0 +1,10 @@
+{
+  "name": "taskshape-vscode",
+  "version": "0.1.0",
+  "description": "Cost-aware routing for every sub-agent launch in VS Code agent mode: a PreToolUse hook on runSubagent classifies the task shape and picks the cheapest adequate Copilot model (suggest mode logs, enforce mode rewrites the model), honoring VS Code's rule that a sub-agent may not cost more than the main model.",
+  "author": {
+    "name": "Alexandre Amorim"
+  },
+  "repository": "https://github.com/AlexandreRra/taskshape",
+  "license": "Apache-2.0"
+}

@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "taskshape"
+version = "0.1.0"
+description = "Cost-aware model routing: classify the shape of a task with Laya, pick the cheapest adequate model from a policy table."
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "Apache-2.0"}
+authors = [{name = "Alexandre Amorim"}]
+keywords = ["llm", "routing", "agents", "cost", "laya"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = []
+
+[project.optional-dependencies]
+laya = ["laya>=0.3.24", "torch>=2.0", "transformers>=4.48", "safetensors>=0.4", "huggingface_hub>=0.20", "numpy>=1.20"]
+mcp = ["mcp>=2.0"]
+
+[project.scripts]
+taskshape = "taskshape.cli:main"
+taskshape-mcp = "taskshape.mcp_server:main"
+
+[project.urls]
+Homepage = "https://github.com/AlexandreRra/taskshape"
+
+[tool.setuptools.packages.find]
+where = ["src"]

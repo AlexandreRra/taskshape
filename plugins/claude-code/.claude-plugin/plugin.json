@@ -1,0 +1,62 @@
+{
+  "name": "taskshape",
+  "version": "0.1.0",
+  "description": "Cost-aware routing for every sub-agent launch: classifies the task shape and picks the cheapest adequate model. Works with zero configuration (enforce mode rewrites the model, built-in Claude profiles); suggest mode only logs.",
+  "author": {
+    "name": "Alexandre Amorim"
+  },
+  "userConfig": {
+    "mode": {
+      "type": "string",
+      "title": "Mode",
+      "description": "enforce: rewrite the Agent tool's model to the chosen profile's model; suggest: log the decision and leave the launch unchanged.",
+      "default": "enforce",
+      "options": [
+        "enforce",
+        "suggest"
+      ]
+    },
+    "command": {
+      "type": "string",
+      "title": "taskshape command",
+      "description": "Optional path to the Python taskshape CLI (for Laya and the lab). Empty: the plugin's built-in rubric routes on its own.",
+      "default": ""
+    },
+    "profiles": {
+      "type": "string",
+      "title": "Profiles file",
+      "description": "Optional profiles.json (authorized model profiles with capability, cost tier and phases). Empty: built-in Claude profiles (haiku, sonnet, opus).",
+      "default": ""
+    },
+    "budget": {
+      "type": "string",
+      "title": "Budget",
+      "description": "Budget name from profiles.json to route under.",
+      "default": "default"
+    },
+    "config": {
+      "type": "string",
+      "title": "Config file",
+      "description": "Optional taskshape.json naming an adopted Laya checkpoint; only used with the Python command.",
+      "default": ""
+    },
+    "decisions": {
+      "type": "string",
+      "title": "Decisions log",
+      "description": "Optional JSONL file for the decision audit trail. Empty: ~/.taskshape/decisions.jsonl (or $CLAUDE_PLUGIN_DATA).",
+      "default": ""
+    },
+    "records": {
+      "type": "string",
+      "title": "Outcome records",
+      "description": "Optional JSONL file for sub-agent outcomes (accepted = the tool call did not error, plus seconds). Empty: ~/.taskshape/outcomes.jsonl.",
+      "default": ""
+    },
+    "respectExplicitModel": {
+      "type": "boolean",
+      "title": "Respect explicit model",
+      "description": "When the launch already names a model, leave it alone even in enforce mode.",
+      "default": true
+    }
+  }
+}

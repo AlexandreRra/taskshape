@@ -1,0 +1,601 @@
+{
+  "version": 1,
+  "as_of": "2026-10-04",
+  "purpose": "Dated, source-linked notes on what current models are good at, used to build deployment profiles and to estimate cost. Vendor pages first, third-party trackers second; benchmark versions and harnesses differ, so numbers are directional. Nothing here grants authorization: profiles.json says what a deployment may call.",
+  "effort_guidance": {
+    "openai": {
+      "levels": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "none": "Latency-critical classification or retrieval with no chained tool calls (GPT-6 Sol and Luna only).",
+      "low": "Tool use, planning and multi-step decisions when speed and cost matter: data analysis, drafting, support flows.",
+      "medium": "Default for most workloads: agentic coding, research, spreadsheet work; planning and judgment.",
+      "high": "Hard reasoning, complex debugging, deep planning, high-value tasks where quality beats latency.",
+      "xhigh": "Deep research, long asynchronous agentic runs, security reviews and challenging coding, only when evals justify the cost.",
+      "max": "Maximum reasoning for the most complex problems.",
+      "sources": [
+        "https://developers.openai.com/api/docs/guides/reasoning"
+      ]
+    },
+    "anthropic": {
+      "levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "guidance": "Tuning effort is often a better lever than switching models. Opus 5.5 defaults to medium (start there); Fable 5.1 and Sonnet 5.5 default to high on the API. Escalate Sonnet -> Opus -> Fable only when evals at higher effort still fall short.",
+      "sources": [
+        "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model",
+        "https://platform.claude.com/docs/en/about-claude/models/overview"
+      ]
+    },
+    "google": {
+      "levels": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "guidance": "Gemini 3.8 Flash thinking: low for latency-critical drafting and chat, medium (default) for complex code and agents, high for deep analysis and difficult multi-step problems; `minimal` is rejected.",
+      "sources": [
+        "https://ai.google.dev/gemini-api/docs/latest-model"
+      ]
+    }
+  },
+  "models": [
+    {
+      "id": "gpt-6-astra",
+      "provider": "openai",
+      "family": "GPT-6",
+      "tier": "frontier",
+      "status": "ga",
+      "positioning": "OpenAI: 'Our most capable model for the most demanding work' - complex reasoning, coding, computer use, research and document creation; the hardest end-to-end work.",
+      "best_for": [
+        "hardest reasoning and architecture",
+        "milestone planning and plan critique",
+        "difficult debugging and disputes",
+        "scientific and research workflows (Terminal-Bench Science 0.1 leader at 68.1%)",
+        "long-horizon computer use and multi-step agent workflows",
+        "complex software engineering (FrontierSWE v2 65.5%, leader)"
+      ],
+      "avoid_for": [
+        "routine bounded edits (5x the price of Sol per token)",
+        "high-volume extraction or classification",
+        "latency-critical calls; no `none` effort"
+      ],
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_effort": "medium",
+      "context_tokens": 1050000,
+      "max_output_tokens": 128000,
+      "price_per_mtok": {
+        "input": 10.0,
+        "cached_input": 1.0,
+        "output": 50.0,
+        "note": "2x input and 1.5x output above 272K input tokens"
+      },
+      "knowledge_cutoff": "2026-04-30",
+      "released": "2026 (before GPT-6 Sol/Luna on 2026-09-22)",
+      "benchmarks": {
+        "Terminal-Bench 4.0 (benchlm, Codex max, 2026-10-02)": 58.18,
+        "FrontierSWE v2": 65.5,
+        "DeepSWE v1.1": 74.1,
+        "Terminal-Bench Science 0.1": 68.1,
+        "SWE-bench Pro (benchlm)": 79.7,
+        "LVBench": 87.5,
+        "GraphWalks 1M": 71.8,
+        "ExploitBench": 100.0
+      },
+      "sources": [
+        "https://developers.openai.com/api/docs/models/gpt-6-astra",
+        "https://developers.openai.com/api/docs/guides/latest-model",
+        "https://benchlm.ai/benchmarks/terminal-bench-4",
+        "https://www.datacamp.com/blog/gemini-4-argon",
+        "https://openai.com/index/introducing-gpt-6-1-sol/"
+      ]
+    },
+    {
+      "id": "gpt-6.1-sol",
+      "provider": "openai",
+      "family": "GPT-6",
+      "tier": "balanced-frontier",
+      "status": "ga",
+      "positioning": "OpenAI: 'complex coding, computer use, and professional work when you want near-Astra performance at lower cost'; the newer Sol model that supersedes GPT-6 Sol.",
+      "best_for": [
+        "coupled correctness and high-risk implementation",
+        "root-cause debugging",
+        "independent code and acceptance review",
+        "coding agents and computer use (DeepSWE v1.1 75.2% at high effort, above Astra's 74.1% at $0.65 vs $4.43 per task)",
+        "scientific workflows (more than doubles GPT-6 Sol on Terminal-Bench Science)",
+        "multi-agent subagent delegation (beta)"
+      ],
+      "avoid_for": [
+        "mechanical lookup or extraction (use Luna)",
+        "latency-critical calls; no `none` effort",
+        "architecture disputes where Astra's extra depth is justified"
+      ],
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_effort": "medium",
+      "context_tokens": 1050000,
+      "max_output_tokens": 128000,
+      "price_per_mtok": {
+        "input": null,
+        "cached_input": null,
+        "output": null,
+        "note": "Model page unavailable on 2026-10-04 (404); OpenAI states lower cost per task than Astra. Verify on the OpenAI pricing page before budgeting."
+      },
+      "knowledge_cutoff": null,
+      "released": "2026-09/10 (after GPT-6 Sol, 2026-09-22)",
+      "benchmarks": {
+        "DeepSWE v1.1 (high effort)": 75.2,
+        "OSWorld 2.0 offline": "+7 pts vs GPT-6 Sol at max effort",
+        "Terminal-Bench Science 0.1": "more than 2x GPT-6 Sol at max effort",
+        "ExploitBench (max)": 99.7,
+        "Terminal-Bench 4.0 (benchlm AA harness)": 56.1
+      },
+      "sources": [
+        "https://openai.com/index/introducing-gpt-6-1-sol/",
+        "https://deploymentsafety.openai.com/gpt-6-1-sol",
+        "https://developers.openai.com/api/docs/guides/latest-model",
+        "https://benchlm.ai/models/gpt-6-1-sol"
+      ]
+    },
+    {
+      "id": "gpt-6-sol",
+      "provider": "openai",
+      "family": "GPT-6",
+      "tier": "balanced",
+      "status": "legacy (superseded by GPT-6.1 Sol)",
+      "positioning": "OpenAI: 'Built to power complex coding and agentic workflows'; everyday work balancing capability and cost. Released 2026-09-22 alongside Luna; the model page now points to GPT-6.1 Sol as the newer Sol.",
+      "best_for": [
+        "routine bounded implementation and coordination (medium)",
+        "bounded single-subsystem repairs and UI fixes with verification (high)",
+        "test-only changes, docs, backlog, asset integration",
+        "read-only repository discovery"
+      ],
+      "avoid_for": [
+        "coupled save or rule correctness (use 6.1 Sol)",
+        "architecture and plan critique (use Astra)",
+        "mechanical lookup (Luna is 20x cheaper)"
+      ],
+      "efforts": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_effort": "medium",
+      "context_tokens": 1050000,
+      "max_output_tokens": 128000,
+      "price_per_mtok": {
+        "input": 2.0,
+        "cached_input": 0.2,
+        "output": 10.0
+      },
+      "knowledge_cutoff": "2026-04-20",
+      "released": "2026-09-22",
+      "benchmarks": {
+        "FrontierCode 1.1 (Anthropic table)": 49.3,
+        "GDPval-AA v2.1 (Anthropic table)": 1487,
+        "Chartography (Anthropic table)": 53.6,
+        "DeepSWE v1.1": "6.4 pts below GPT-6.1 Sol"
+      },
+      "sources": [
+        "https://developers.openai.com/api/docs/models/gpt-6-sol",
+        "https://www.macrumors.com/2026/09/22/openai-gpt-6-sol-luna/",
+        "https://www.anthropic.com/claude-sonnet-5-5"
+      ]
+    },
+    {
+      "id": "gpt-6-luna",
+      "provider": "openai",
+      "family": "GPT-6",
+      "tier": "efficient",
+      "status": "ga",
+      "positioning": "OpenAI: 'Our most efficient model for focused, high-volume tasks' - extracting fields, classifying requests, tagging, routing, structured summaries, short replies.",
+      "best_for": [
+        "mechanical exact file or string lookup",
+        "extraction and classification at scale",
+        "structured summaries and draft scaffolding"
+      ],
+      "avoid_for": [
+        "implementation, diagnosis, architecture or approval (project rule and OpenAI guidance: escalate to Sol for flagship reasoning)",
+        "live or realtime sessions, audio, video, image generation (unsupported)"
+      ],
+      "efforts": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_effort": "medium",
+      "context_tokens": 1050000,
+      "max_output_tokens": 128000,
+      "price_per_mtok": {
+        "input": 0.1,
+        "cached_input": 0.01,
+        "output": 0.5
+      },
+      "knowledge_cutoff": "2026-05-18",
+      "released": "2026-09-22",
+      "benchmarks": {
+        "DeepSWE v1.1 (third-party)": 66.6,
+        "Coding weighted (benchlm, 2026-10-02)": 50.2
+      },
+      "sources": [
+        "https://developers.openai.com/api/docs/models/gpt-6-luna",
+        "https://www.macrumors.com/2026/09/22/openai-gpt-6-sol-luna/",
+        "https://unifically.com/models/gpt-6-luna",
+        "https://benchlm.ai/coding"
+      ]
+    },
+    {
+      "id": "claude-fable-5-1",
+      "provider": "anthropic",
+      "family": "Claude 5 (Mythos-class)",
+      "tier": "frontier",
+      "status": "ga (Mythos 5.1 is the same model with fewer safeguards, restricted access)",
+      "positioning": "Anthropic: 'For demanding reasoning and long-horizon agentic work'; use when Opus 5.5 at xhigh or max effort still falls short. Strongest on agentic scientific research and hours-long agent sessions; default effort high.",
+      "best_for": [
+        "hours-long agent sessions and multistep deep research",
+        "demanding reasoning and analysis carried to a finished document",
+        "acceptance when Opus at high effort fell short",
+        "vulnerability discovery (defensive; not exploit development)"
+      ],
+      "avoid_for": [
+        "routine or bounded coding (Opus 5.5 beats it on Terminal-Bench 4.0 and FrontierCode at 40% of the price)",
+        "anything outside a user-dated override in this project"
+      ],
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_effort": "high",
+      "context_tokens": 1000000,
+      "max_output_tokens": 128000,
+      "price_per_mtok": {
+        "input": 10.0,
+        "cached_input": 0.25,
+        "output": 50.0
+      },
+      "knowledge_cutoff": "2026-06",
+      "released": "2026-09-01",
+      "benchmarks": {
+        "Terminal-Bench 4.0 (Anthropic)": 55.8,
+        "Terminal-Bench 4.0 (benchlm, Claude Code max, 2026-10-02)": 57.88,
+        "Terminal-Bench Science 0.1": 52.6,
+        "GDPval-AA v2": 1853,
+        "GDPval-AA v2.1 (Opus 5.5 table)": 1735,
+        "OSWorld 2.1": 80.7,
+        "OSWorld 2.0 partial": 77.9,
+        "HLE with tools": 65.0,
+        "CursorBench 3.2": 73.4,
+        "FrontierCode 1.1": 50.3,
+        "DeepSWE v1.1 (Google table)": 67.4,
+        "Coding weighted (benchlm)": 79.7
+      },
+      "sources": [
+        "https://www.anthropic.com/claude-fable-and-mythos-5-1",
+        "https://platform.claude.com/docs/en/about-claude/models/overview",
+        "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model",
+        "https://www.anthropic.com/claude-opus-5-5",
+        "https://benchlm.ai/benchmarks/terminal-bench-4"
+      ]
+    },
+    {
+      "id": "claude-opus-5-5",
+      "provider": "anthropic",
+      "family": "Claude 5",
+      "tier": "flagship",
+      "status": "ga",
+      "positioning": "Anthropic: 'For long-running agentic coding and knowledge work'; recommended starting point for most workloads. Finds root causes before changing anything, orchestrates subagents, matches Opus 5 quality in about half the turns. Default effort medium.",
+      "best_for": [
+        "multi-hour autonomous coding, large-scale refactoring, complex systems engineering",
+        "sustained judgment: architecture, planning, plan and PRD critique",
+        "coupled save and rule correctness across systems",
+        "ambiguous root-cause diagnosis",
+        "independent acceptance review",
+        "computer use (OSWorld 2.1 81.8%) and vision-heavy workflows",
+        "knowledge work (GDPval-AA v2.1 1846)"
+      ],
+      "avoid_for": [
+        "routine bounded edits where Sonnet 5.5 is 30% faster and cheaper",
+        "mechanical lookup"
+      ],
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_effort": "medium",
+      "context_tokens": 1000000,
+      "max_output_tokens": 128000,
+      "price_per_mtok": {
+        "input": 4.0,
+        "cached_input": 0.2,
+        "output": 20.0
+      },
+      "knowledge_cutoff": "2026-06",
+      "released": "2026-09-22",
+      "benchmarks": {
+        "Terminal-Bench 4.0": 66.4,
+        "FrontierCode 1.1": 54.4,
+        "CursorBench 4.0": 57.8,
+        "GDPval-AA v2.1": 1846,
+        "OSWorld 2.1": 81.8,
+        "HLE": 67.7,
+        "Chartography": 64.4,
+        "DeepSWE v1.1 (Google table)": 74.2,
+        "FrontierSWE v2 (Google table)": 62.3,
+        "SWE-bench Pro / coding weighted (benchlm)": 83.3
+      },
+      "sources": [
+        "https://www.anthropic.com/claude-opus-5-5",
+        "https://platform.claude.com/docs/en/about-claude/models/overview",
+        "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model",
+        "https://www.datacamp.com/blog/gemini-4-argon",
+        "https://benchlm.ai/coding"
+      ]
+    },
+    {
+      "id": "claude-sonnet-5-5",
+      "provider": "anthropic",
+      "family": "Claude 5",
+      "tier": "balanced",
+      "status": "ga",
+      "positioning": "Anthropic: 'The best combination of speed and intelligence'; a faster, lower-cost complement to Opus 5.5 for well-scoped everyday tasks and bug fixing. Beats Opus 5.5 on agentic terminal coding (Terminal-Bench 4.0 70.6% vs 66.4%) and trails it by a few points elsewhere. Default effort high.",
+      "best_for": [
+        "demanding bounded implementation and agentic terminal coding (high)",
+        "UI work with smoke tests and captures; design polish",
+        "debugging inside one subsystem",
+        "regression tests",
+        "routine bounded edits, docs, backlog, discovery (medium)",
+        "visual understanding of capture PNGs (project fallback visual reviewer)"
+      ],
+      "avoid_for": [
+        "architecture, plan critique and disputes (Opus)",
+        "coupled multi-system correctness (Opus)",
+        "independent acceptance review in this project (Opus is the authorized review profile)"
+      ],
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_effort": "high",
+      "context_tokens": 1000000,
+      "max_output_tokens": 128000,
+      "price_per_mtok": {
+        "input": 2.0,
+        "cached_input": 0.2,
+        "output": 10.0
+      },
+      "knowledge_cutoff": "2026-06",
+      "released": "2026-09-28",
+      "benchmarks": {
+        "Terminal-Bench 4.0": 70.6,
+        "FrontierCode 1.1 (max)": 46.2,
+        "CursorBench 4.0": 55.5,
+        "GDPval-AA v2.1": 1844,
+        "AA-Briefcase v1.1": 1811,
+        "HLE": 64.5,
+        "OSWorld 2.1": 80.1,
+        "Chartography": 61.6,
+        "SWE-bench Pro / coding weighted (benchlm)": 85.6
+      },
+      "sources": [
+        "https://www.anthropic.com/claude-sonnet-5-5",
+        "https://the-decoder.com/anthropics-claude-sonnet-5-5-nearly-matches-opus-5-5-on-benchmarks-while-costing-up-to-30-percent-less-per-task/",
+        "https://platform.claude.com/docs/en/about-claude/models/overview",
+        "https://benchlm.ai/coding"
+      ]
+    },
+    {
+      "id": "claude-haiku-4-5",
+      "provider": "anthropic",
+      "family": "Claude 4.5",
+      "tier": "efficient",
+      "status": "ga (retirement not before 2026-10-15; Haiku 5.5 announced as coming)",
+      "positioning": "Anthropic: 'The fastest model with near-frontier intelligence' - real-time, high-volume, cost-sensitive processing and sub-agent tasks. Not authorized in this project (CLAUDE.md: do not inherit OMC Haiku tiers).",
+      "best_for": [
+        "high-volume classification and extraction",
+        "sub-agent lookups"
+      ],
+      "avoid_for": [
+        "any project implementation, review or planning"
+      ],
+      "efforts": [],
+      "default_effort": null,
+      "context_tokens": 200000,
+      "max_output_tokens": 64000,
+      "price_per_mtok": {
+        "input": 1.0,
+        "cached_input": 0.1,
+        "output": 5.0
+      },
+      "knowledge_cutoff": "2025-02",
+      "released": "2025-10",
+      "benchmarks": {},
+      "sources": [
+        "https://platform.claude.com/docs/en/about-claude/models/overview"
+      ]
+    },
+    {
+      "id": "gemini-3.8-flash",
+      "provider": "google",
+      "family": "Gemini 3",
+      "tier": "balanced",
+      "status": "ga (2026-09-02)",
+      "positioning": "Google: 'most intelligent Flash model, engineered for long-horizon software engineering, autonomous agents, and complex enterprise workflows'. Text, image, audio, video and PDF input; persistent multi-step tool use; strongest third-party category is multimodal and grounded work (screenshots, documents, charts). The project's `agy` CLI profile names it `gemini-3.8-flash-high` (high thinking).",
+      "best_for": [
+        "multimodal screenshot, document and chart inspection",
+        "persistent multi-step tool orchestration and long-horizon coding (DeepSWE v1.1 73.7%)",
+        "large-scale data pipelines and long context (1M)",
+        "cheap high-volume agent work"
+      ],
+      "avoid_for": [
+        "terminal-heavy agentic coding on demanding harnesses (Terminal-Bench 4.0 19.1% with mini-SWE-agent vs 89.4% on Terminal-Bench 2.1; harness sensitive)",
+        "anything requiring per-call model or effort choice in this project (native override unverified; single profile)"
+      ],
+      "efforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "default_effort": "medium",
+      "context_tokens": 1000000,
+      "max_output_tokens": 64000,
+      "price_per_mtok": {
+        "input": 0.75,
+        "output": 3.75,
+        "note": "introductory until 2026-12-31; then 1.50 / 7.50"
+      },
+      "knowledge_cutoff": null,
+      "released": "2026-09-02",
+      "benchmarks": {
+        "DeepSWE v1.1": 73.7,
+        "Terminal-Bench 2.1": 89.4,
+        "Terminal-Bench 4.0 (benchlm, mini-SWE-agent high)": 19.09,
+        "Coding weighted (benchlm)": 63.6
+      },
+      "sources": [
+        "https://ai.google.dev/gemini-api/docs/latest-model",
+        "https://deepmind.google/models/gemini/flash/",
+        "https://www.eesel.ai/blog/gemini-3-8-flash",
+        "https://benchlm.ai/benchmarks/terminal-bench-4",
+        "https://benchlm.ai/benchmarks/terminalbench21"
+      ]
+    },
+    {
+      "id": "gemini-4-argon",
+      "provider": "google",
+      "family": "Gemini 4",
+      "tier": "frontier",
+      "status": "limited release (2026-09-30: Fairwind cybersecurity partners and internal teams; paid API and AI Ultra later; no public API id)",
+      "positioning": "Google: frontier model for complex enterprise workflows - software engineering, legal and finance knowledge work, cybersecurity defense; first or tied first on 14 of 19 published benchmarks. Not available to this project.",
+      "best_for": [
+        "long-context whole-repository reasoning (GraphWalks 1M 84.2%)",
+        "long-horizon software engineering and migrations (DeepSWE v1.1 77.9%, leader)",
+        "multimodal and video understanding (LVBench 91.7%)",
+        "legal, finance and business automation workflows",
+        "defensive vulnerability discovery and patching"
+      ],
+      "avoid_for": [
+        "terminal-driven tasks (Terminal-Bench 4.0 57.4% vs Opus 5.5 66.4%)",
+        "FrontierSWE v2 (55.0% vs Astra 65.5%)",
+        "science via shell (Terminal-Bench Science 57.6% vs Astra 68.1%)"
+      ],
+      "efforts": [],
+      "default_effort": null,
+      "context_tokens": 1000000,
+      "max_output_tokens": 1000000,
+      "price_per_mtok": {
+        "input": 2.0,
+        "output": 10.0,
+        "note": "introductory; standard 4.00 / 20.00; cached input 95% off"
+      },
+      "knowledge_cutoff": null,
+      "released": "2026-09-30",
+      "benchmarks": {
+        "DeepSWE v1.1": 77.9,
+        "GraphWalks 1M": 84.2,
+        "LVBench": 91.7,
+        "AutomationBench": 51.3,
+        "Vals Index": 68.9,
+        "Terminal-Bench 4.0": 57.4,
+        "FrontierSWE v2": 55.0,
+        "Terminal-Bench Science 0.1": 57.6,
+        "CWE-bench v1": 68.0,
+        "Coding weighted (benchlm)": 74.0
+      },
+      "sources": [
+        "https://deepmind.google/models/gemini/",
+        "https://www.datacamp.com/blog/gemini-4-argon",
+        "https://venturebeat.com/technology/google-unveils-gemini-4-argon-retaking-benchmark-lead-over-openai-and-anthropic-but-in-limited-release"
+      ]
+    },
+    {
+      "id": "gemini-3.1-pro-preview",
+      "provider": "google",
+      "family": "Gemini 3",
+      "tier": "flagship (preview)",
+      "status": "preview",
+      "positioning": "Google: 'advanced intelligence, complex problem-solving skills, and powerful agentic capabilities'; still preview on 2026-10-01 and superseded in Google's roadmap by Gemini 4. Not authorized.",
+      "best_for": [
+        "complex problem solving where a preview model is acceptable"
+      ],
+      "avoid_for": [
+        "production routing in this project (preview, no authorization)"
+      ],
+      "efforts": [],
+      "default_effort": null,
+      "context_tokens": null,
+      "max_output_tokens": null,
+      "price_per_mtok": {},
+      "knowledge_cutoff": null,
+      "released": null,
+      "benchmarks": {},
+      "sources": [
+        "https://ai.google.dev/gemini-api/docs/models"
+      ]
+    }
+  ],
+  "task_guide": [
+    {
+      "shape": "routine",
+      "note": "Any balanced tier at medium effort: GPT-6 Sol, Claude Sonnet 5.5 (fastest), Gemini 3.8 Flash (cheapest)."
+    },
+    {
+      "shape": "demanding",
+      "note": "Balanced tier at high effort; Sonnet 5.5 leads Terminal-Bench 4.0 (70.6%), GPT-6.1 Sol is the modern Sol."
+    },
+    {
+      "shape": "coupled",
+      "note": "GPT-6.1 Sol high or Claude Opus 5.5; Opus 5.5 and GPT-6 Astra lead FrontierSWE and CursorBench."
+    },
+    {
+      "shape": "review",
+      "note": "Near-frontier correctness at the lowest price: GPT-6.1 Sol high, or Opus 5.5 for judgment-heavy acceptance."
+    },
+    {
+      "shape": "architecture",
+      "note": "GPT-6 Astra or Claude Opus 5.5; Fable 5.1 for hours-long research when Opus at high effort falls short."
+    },
+    {
+      "shape": "visual",
+      "note": "Gemini (3.8 Flash, Argon) leads multimodal benchmarks; Claude Sonnet/Opus 5.5 read images well; vision flag required."
+    },
+    {
+      "shape": "lookup",
+      "note": "GPT-6 Luna, Gemini Flash-Lite or Claude Haiku 4.5: extraction and classification at the lowest price."
+    }
+  ]
+}

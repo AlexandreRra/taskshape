@@ -1,0 +1,10 @@
+{
+  "name": "taskshape",
+  "version": "0.1.0",
+  "description": "Cost-aware routing for every sub-agent launch in GitHub Copilot CLI: classifies the task shape and picks the cheapest adequate model and reasoning effort. Suggest mode logs; enforce mode rewrites the task tool's model and reasoning_effort.",
+  "author": {
+    "name": "Alexandre Amorim"
+  },
+  "repository": "https://github.com/AlexandreRra/taskshape",
+  "license": "Apache-2.0"
+}

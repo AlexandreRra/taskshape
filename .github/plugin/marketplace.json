@@ -1,0 +1,31 @@
+{
+  "name": "taskshape",
+  "description": "Cost-aware model routing for sub-agents: classify the task shape, pick the cheapest adequate model.",
+  "owner": {
+    "name": "Alexandre Amorim"
+  },
+  "plugins": [
+    {
+      "name": "taskshape-vscode",
+      "source": "./plugins/vscode",
+      "description": "VS Code agent mode: routes every runSubagent launch (suggest logs, enforce rewrites the model) with the shipped multi-provider Copilot profile table. Needs Node 22.6+.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Alexandre Amorim"
+      },
+      "keywords": ["routing", "cost", "sub-agents", "models", "vscode"],
+      "category": "workflow"
+    },
+    {
+      "name": "taskshape-copilot",
+      "source": "./plugins/copilot",
+      "description": "GitHub Copilot CLI (also Copilot CLI sessions inside VS Code): routes every task launch and, in enforce mode, rewrites model and reasoning_effort. Needs Node 22.6+.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Alexandre Amorim"
+      },
+      "keywords": ["routing", "cost", "sub-agents", "models", "copilot"],
+      "category": "workflow"
+    }
+  ]
+}

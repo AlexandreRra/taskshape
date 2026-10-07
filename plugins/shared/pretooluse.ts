@@ -1,0 +1,92 @@
+// PreToolUse hook for sub-agent launches. Copilot CLI sends `{ toolName: "task", toolArgs }`; VS Code's
+// agent mode sends `{ tool_name: "runSubagent", tool_input }`. Stdin JSON in; JSON out only in enforce mode.
+// Runs with `node --experimental-strip-types`; no dependencies beyond Node 22.6+.
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import {
+  DEFAULT_CONFIG, type Config, type Decide, type Decision, type HookInput, type LocalInput, appendLine, applyCatalog, dataDir, dataPaths,
+  detectHarness, ensureConfig, loadProfilesFrom, originFor, outcomeFor, parseConfig, readJson, routeEmbedded, sessionModel, writeJson,
+} from './harness.ts'
+import { refreshCatalog } from './discover.ts'
+import type { Profile } from './policy.ts'
+
+const here = dirname(new URL(import.meta.url).pathname)
+
+const routeWithCli = (config: Config, profilesPath: string, prompt: string, candidates: readonly Profile[], all: readonly Profile[]): Decision => {
+  const argv = ['route', '--profiles', profilesPath, '--budget', config.budget, '--phase', 'work', '--task', prompt, '--origin', 'copilot-plugin']
+  if (config.config) argv.push('--config', config.config)
+  if (candidates.length !== all.length) argv.push('--allowed', candidates.map(p => p.id).join(','))
+  const ran = spawnSync(config.command, argv, { encoding: 'utf8', timeout: 25000 })
+  if (ran.status !== 0) throw new Error((ran.stderr || `exit ${ran.status}`).trim().slice(0, 200))
+  const parsed = JSON.parse(ran.stdout) as Decision
+  parsed.source = `cli:${parsed.source}`
+  return parsed
+}
+
+const main = async () => {
+  let input: HookInput
+  try {
+    input = JSON.parse(readFileSync(0, 'utf8')) as HookInput
+  } catch {
+    return
+  }
+  const harness = detectHarness(input)
+  if (harness === 'unknown') return
+  const dir = dataDir()
+  const paths = dataPaths(dir)
+  const origin = originFor(harness)
+  ensureConfig(paths.config)
+  const config = parseConfig(readJson(paths.config) ?? DEFAULT_CONFIG, process.env)
+  const profilesPath = config.profiles || join(here, '..', 'profiles.copilot.json')
+  const warnings: string[] = []
+  let shipped
+  try {
+    shipped = loadProfilesFrom(readFileSync(profilesPath, 'utf8'))
+  } catch (error) {
+    appendLine(paths.decisions, { ts: Date.now() / 1000, origin, harness, mode: 'skipped', error: `profiles unusable: ${String(error).slice(0, 160)}` })
+    return
+  }
+  // the account's catalog (discovered through the Copilot CLI) narrows the table to models that can actually launch
+  const catalog = await refreshCatalog(paths, config, dir)
+  const applied = applyCatalog(shipped, catalog)
+  const table = applied.table
+  if (applied.warning) warnings.push(applied.warning)
+  const decide: Decide = (prompt, candidates) => {
+    if (config.command) {
+      try {
+        return routeWithCli(config, profilesPath, prompt, candidates, shipped.profiles)
+      } catch (error) {
+        warnings.push(`taskshape command failed: ${String(error).slice(0, 120)}`)
+        const fallback = routeEmbedded(prompt, 'work', table, config.budget, candidates)
+        fallback.source = 'rubric-fallback'
+        return fallback
+      }
+    }
+    return routeEmbedded(prompt, 'work', table, config.budget, candidates)
+  }
+  const sessionId = harness === 'vscode-local' ? (input as LocalInput).session_id : (input as { sessionId?: string }).sessionId
+  const mainModel = harness === 'vscode-local' ? sessionModel(paths.sessions, sessionId) : undefined
+  const outcome = outcomeFor(input, config, decide, table, mainModel)
+  if (outcome.kind === 'skip') {
+    appendLine(paths.decisions, { ts: Date.now() / 1000, origin, harness, mode: 'skipped', why: outcome.why, sessionId: sessionId ?? null })
+    return
+  }
+  const decision = outcome.decision
+  decision.warnings = [...(decision.warnings ?? []), ...warnings]
+  const args = harness === 'vscode-local' ? ((input as LocalInput).tool_input ?? {}) : ((input as { toolArgs?: Record<string, unknown> }).toolArgs ?? {})
+  const row = { ts: Date.now() / 1000, origin, harness, mode: outcome.kind === 'enforce' ? 'enforced' : 'suggested', sessionId: sessionId ?? null,
+    phase: decision.phase, shape: decision.shape, profile: decision.profile, model: decision.model, model_name: decision.model_name ?? null,
+    effort: decision.effort, answer_confidence: decision.answer_confidence, source: decision.source, reason: decision.reason, warnings: decision.warnings,
+    main_model: mainModel ?? null, agent_type: (args.agent_type as string | undefined) ?? (args.agentName as string | undefined) ?? null,
+    description: (args.description as string | undefined) ?? null,
+    catalog: catalog && Object.keys(catalog.models).length > 0 ? { source: catalog.source, ts: catalog.ts, models: Object.keys(catalog.models).length, error: catalog.error ?? null } : null,
+    unavailable_profiles: applied.dropped }
+  appendLine(paths.decisions, row)
+  if (sessionId) writeJson(paths.pending, sessionId, row)
+  if (outcome.kind === 'enforce') process.stdout.write(JSON.stringify(outcome.output))
+}
+
+main().catch(() => {
+  // best effort: the launch goes through unchanged
+})

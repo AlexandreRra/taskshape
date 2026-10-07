@@ -1,0 +1,21 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "taskshape",
+  "description": "Cost-aware model routing for sub-agents: classify the task shape, pick the cheapest adequate model.",
+  "owner": {
+    "name": "Alexandre Amorim"
+  },
+  "plugins": [
+    {
+      "name": "taskshape",
+      "source": "./plugins/claude-code",
+      "description": "Routes every sub-agent launch: suggest mode logs the decision, enforce mode rewrites the model. Works out of the box with built-in Claude profiles; add the Python package for Laya, the lab and the MCP server.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Alexandre Amorim"
+      },
+      "keywords": ["routing", "cost", "sub-agents", "models", "laya"],
+      "category": "workflow"
+    }
+  ]
+}

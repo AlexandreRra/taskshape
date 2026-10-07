@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "note": "Built-in Claude Code profiles, the same table as hooks/policy.ts DEFAULT_PROFILES. Used by the Python CLI when the plugin has no profiles option. Claude Code's Agent tool has no effort field, so none is listed.",
+  "profiles": [
+    {"id": "haiku", "model": "claude-haiku-4-5", "provider": "anthropic", "effort": "default", "capability": 1, "cost_tier": 0, "phases": ["work"], "vision": true},
+    {"id": "sonnet", "model": "claude-sonnet-5-5", "provider": "anthropic", "effort": "default", "capability": 2, "cost_tier": 1, "phases": ["work"], "vision": true},
+    {"id": "opus", "model": "claude-opus-5-5", "provider": "anthropic", "effort": "default", "capability": 4, "cost_tier": 3, "phases": ["work", "review"], "vision": true}
+  ],
+  "budgets": {
+    "economy": {"max_cost_tier": 1},
+    "standard": {"max_cost_tier": 3},
+    "default": {"max_cost_tier": 5}
+  }
+}

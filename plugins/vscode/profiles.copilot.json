@@ -1,0 +1,160 @@
+{
+  "version": 1,
+  "note": "Default profiles for GitHub Copilot sub-agents: the Copilot CLI `task` tool (also used by Copilot CLI sessions inside VS Code) and VS Code's own `runSubagent` tool. `model` is the id the `task` tool accepts; `models` maps ids to the display name VS Code matches on and the usage multiplier VS Code compares against the main model (read from this account on 2026-10-06 through the CLI's ACP server). capability: 0 mechanical, 1 routine, 2 demanding, 3 coupled/review, 4 frontier. cost_tier from GitHub's published per-token rates (docs.github.com, Models and pricing for GitHub Copilot, October 2026): 0 under $1/M output, 1 up to $5/M, 2 up to $10/M, 3 up to $15/M. Prune to what your plan offers (see /model). Frontier models (Opus 5.5, GPT-6 Astra/Sol, Fable) are not offered to sub-agents on every plan; add them here when the task tool lists them.",
+  "profiles": [
+    {
+      "id": "gpt-6-luna",
+      "model": "gpt-6-luna",
+      "provider": "openai",
+      "effort": "low",
+      "capability": 1,
+      "cost_tier": 0,
+      "phases": [
+        "work"
+      ],
+      "vision": true
+    },
+    {
+      "id": "gpt-5-mini",
+      "model": "gpt-5-mini",
+      "provider": "openai",
+      "effort": "low",
+      "capability": 0,
+      "cost_tier": 0,
+      "phases": [
+        "work"
+      ],
+      "vision": false
+    },
+    {
+      "id": "mai-code-flash",
+      "model": "mai-code-1.1-flash",
+      "provider": "microsoft",
+      "effort": "default",
+      "capability": 1,
+      "cost_tier": 0,
+      "phases": [
+        "work"
+      ],
+      "vision": false
+    },
+    {
+      "id": "gemini-flash",
+      "model": "gemini-3.8-flash",
+      "provider": "google",
+      "effort": "medium",
+      "capability": 2,
+      "cost_tier": 1,
+      "phases": [
+        "work"
+      ],
+      "vision": true
+    },
+    {
+      "id": "haiku",
+      "model": "claude-haiku-4.5",
+      "provider": "anthropic",
+      "effort": "default",
+      "capability": 1,
+      "cost_tier": 1,
+      "phases": [
+        "work"
+      ],
+      "vision": true
+    },
+    {
+      "id": "grok",
+      "model": "grok-4.7",
+      "provider": "xai",
+      "effort": "high",
+      "capability": 2,
+      "cost_tier": 2,
+      "phases": [
+        "work"
+      ],
+      "vision": false
+    },
+    {
+      "id": "sonnet",
+      "model": "claude-sonnet-5.5",
+      "provider": "anthropic",
+      "effort": "high",
+      "capability": 3,
+      "cost_tier": 2,
+      "phases": [
+        "work",
+        "review"
+      ],
+      "vision": true
+    },
+    {
+      "id": "gpt-5.4",
+      "model": "gpt-5.4",
+      "provider": "openai",
+      "effort": "high",
+      "capability": 3,
+      "cost_tier": 2,
+      "phases": [
+        "work",
+        "review"
+      ],
+      "vision": true
+    },
+    {
+      "id": "codex",
+      "model": "gpt-5.3-codex",
+      "provider": "openai",
+      "effort": "high",
+      "capability": 3,
+      "cost_tier": 3,
+      "phases": [
+        "work",
+        "review"
+      ],
+      "vision": false
+    },
+    {
+      "id": "kimi",
+      "model": "kimi-k3",
+      "provider": "moonshot",
+      "effort": "high",
+      "capability": 2,
+      "cost_tier": 3,
+      "phases": [
+        "work"
+      ],
+      "vision": false
+    }
+  ],
+  "models": {
+    "auto": { "name": "Auto" },
+    "claude-sonnet-5": { "name": "Claude Sonnet 5", "multiplier": 1 },
+    "claude-sonnet-5.5": { "name": "Claude Sonnet 5.5", "multiplier": 1 },
+    "claude-haiku-4.5": { "name": "Claude Haiku 4.5", "multiplier": 0.33 },
+    "gpt-6-luna": { "name": "GPT-6 Luna", "multiplier": 1 },
+    "gpt-5.6-terra": { "name": "GPT-5.6 Terra", "multiplier": 1 },
+    "gpt-5.6-luna": { "name": "GPT-5.6 Luna", "multiplier": 1 },
+    "gpt-5.4": { "name": "GPT-5.4", "multiplier": 1 },
+    "gpt-5.4-mini": { "name": "GPT-5.4 mini", "multiplier": 0.33 },
+    "gpt-5.3-codex": { "name": "GPT-5.3-Codex", "multiplier": 1 },
+    "gpt-5-mini": { "name": "GPT-5 mini", "multiplier": 0 },
+    "mai-code-1.1-flash": { "name": "MAI-Code-1.1-Flash", "multiplier": 1 },
+    "gemini-3.8-flash": { "name": "Gemini 3.8 Flash", "multiplier": 14 },
+    "gemini-3.7-flash": { "name": "Gemini 3.7 Flash", "multiplier": 14 },
+    "grok-4.5": { "name": "Grok 4.5", "multiplier": 1 },
+    "grok-4.6": { "name": "Grok 4.6", "multiplier": 1 },
+    "grok-4.7": { "name": "Grok 4.7", "multiplier": 1 },
+    "kimi-k3": { "name": "Kimi K3", "multiplier": 1 }
+  },
+  "budgets": {
+    "economy": {
+      "max_cost_tier": 1
+    },
+    "standard": {
+      "max_cost_tier": 2
+    },
+    "default": {
+      "max_cost_tier": 5
+    }
+  }
+}
