@@ -20,7 +20,7 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-laya = ["laya>=0.3.24", "torch>=2.0", "transformers>=4.48", "safetensors>=0.4", "huggingface_hub>=0.20", "numpy>=1.20"]
+laya = ["laya>=0.3.24", "torch>=2.13.0", "transformers>=4.48", "safetensors>=0.4", "huggingface_hub>=0.20", "numpy>=1.20"]
 mcp = ["mcp>=2.0"]
 
 [project.scripts]

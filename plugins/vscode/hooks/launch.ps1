@@ -1,4 +1,5 @@
-param([string]$Script, [Parameter(ValueFromRemainingArguments=$true)][string[]]$Rest,
+[CmdletBinding(PositionalBinding=$false)]
+param([Parameter(Position=0)][string]$Script, [Parameter(Position=1,ValueFromRemainingArguments=$true)][string[]]$Rest,
   [Parameter(ValueFromPipeline=$true)][string]$PipelinePayload)
 $ErrorActionPreference = 'Stop'
 $NeedMajor = 22

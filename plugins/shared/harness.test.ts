@@ -613,16 +613,19 @@ test('Windows launchers preserve UTF-8 hook input through PowerShell 5 and 7', {
   const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
   try {
     const hooks = installPluginFixture(tmp)
-    writeFileSync(join(hooks, 'echo.ts'), "let input = ''; for await (const chunk of process.stdin) input += chunk.toString(); process.stdout.write(input)")
+    writeFileSync(join(hooks, 'echo.ts'), "let input = ''; for await (const chunk of process.stdin) input += chunk.toString(); process.stdout.write(JSON.stringify({ input, args: process.argv.slice(2) }))")
     const payload = { prompt: 'Olá, português e 日本語', description: 'Preserve Unicode', tool_name: 'runSubagent' }
     for (const shell of ['powershell.exe', 'pwsh']) {
-      const result = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', join(hooks, 'launch.ps1'), 'echo.ts'], {
+      const args = ['prepare', 'argument with spaces']
+      const result = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', join(hooks, 'launch.ps1'), 'echo.ts', ...args], {
         input: JSON.stringify(payload), encoding: 'utf8', timeout: 10_000,
         env: { ...process.env, TASKSHAPE_HOME: home, TASKSHAPE_FORCE_BUNDLED_NODE: '', TASKSHAPE_REQUIRE_BUNDLED_NODE: '' },
       })
       assert.equal(result.status, 0, `${shell}: ${result.stderr}`)
       assert.ok(result.stdout.trim(), `${shell}: ${result.stderr || 'The hook produced no output'}`)
-      assert.deepEqual(JSON.parse(result.stdout), payload, shell)
+      const echoed = JSON.parse(result.stdout)
+      assert.deepEqual(JSON.parse(echoed.input), payload, shell)
+      assert.deepEqual(echoed.args, args, shell)
     }
   } finally {
     rmSync(tmp, { recursive: true, force: true })
