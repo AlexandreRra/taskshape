@@ -73,6 +73,9 @@ Cost tiers are policy ordering values in the profile table. They are not live pr
 - A launch that already names a model is left unchanged by default.
 - Routing can only choose among profiles that remain after budget, phase, allowed-profile, and discovered-availability filters.
 - `subagentStop` records `accepted` from `stopReason === "end_turn"`.
+- In `suggest` mode the outcome records `profile: null`, `model: inherited` and the proposed profile in `suggested_profile`, so reports do not credit a profile that never ran.
+- A `budget` name missing from the profile table skips routing: the launch keeps its original model and the error is logged in `decisions.jsonl`. Only `default` falls back to the widest ceiling when the table does not define it.
+- An outcome is attributed to a launch only when exactly one pending launch fits the stop. With several candidates (parallel launches in one session that the stop cannot tell apart by agent name or type) the oldest is consumed and the outcome is logged as not attributed. Pending launches older than 6 hours are discarded.
 
 ## VS Code
 

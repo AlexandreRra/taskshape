@@ -3,7 +3,8 @@
 // `{ permissionDecision: "allow", modifiedArgs }`; VS Code's own agent mode (the "Local" harness) sends
 // `{ tool_name, tool_input }` and applies `hookSpecificOutput.updatedInput`. Pure functions live here so
 // `node --test` covers them; file I/O helpers are small and best effort (a hook must never break a launch).
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { classify } from './rubric.ts'
@@ -147,8 +148,19 @@ export const parseConfig = (raw: unknown, env: Record<string, string | undefined
 
 export const loadProfilesFrom = (text: string): Table => validateProfiles(JSON.parse(text))
 
+/**
+ * The cost-tier ceiling of a named budget. A name the table does not define (a typo such as "econony") throws instead of
+ * silently routing under another budget; the hook then keeps the original model and logs the error. Only the built-in
+ * "default" falls back to the widest ceiling when a custom table does not define it.
+ */
+export const budgetCap = (table: Table, budget: string): number => {
+  if (Object.hasOwn(table.budgets, budget)) return table.budgets[budget].max_cost_tier
+  if (budget === 'default') return 5
+  throw new Error(`unknown budget "${budget.slice(0, 40)}"; known: ${Object.keys(table.budgets).join(', ')}`)
+}
+
 export const routeEmbedded = (task: string, phase: Phase, table: Table, budget: string, candidates?: readonly Profile[]): Decision => {
-  const cap = table.budgets[budget]?.max_cost_tier ?? table.budgets.default?.max_cost_tier ?? 5
+  const cap = budgetCap(table, budget)
   const shape = classify(task, phase)
   const choice = choose(shape, candidates ?? table.profiles, phase, cap)
   return { task: task.slice(0, 500), phase, shape, profile: choice.profile.id, model: choice.profile.model,
@@ -158,16 +170,19 @@ export const routeEmbedded = (task: string, phase: Phase, table: Table, budget: 
 
 export const routeClassified = (task: string, phase: Phase, table: Table, budget: string, shape: Shape,
   answerConfidence: number, source: string, candidates?: readonly Profile[], shapeProbabilities?: Record<string, number>): Decision => {
-  const cap = table.budgets[budget]?.max_cost_tier ?? table.budgets.default?.max_cost_tier ?? 5
+  const cap = budgetCap(table, budget)
   const choice = choose(shape, candidates ?? table.profiles, phase, cap)
   return { task: task.slice(0, 500), phase, shape, profile: choice.profile.id, model: choice.profile.model,
     effort: choice.profile.effort ?? 'default', reason: `classified as ${shape}; ${choice.reason}`, source,
     answer_confidence: answerConfidence, warnings: [...choice.warnings], shape_probabilities: shapeProbabilities }
 }
 
+/** Model maps are keyed by ids from files and the Copilot CLI: only own keys count, never `constructor` or `toString`. */
+const ownInfo = (models: Record<string, ModelInfo>, id: string): ModelInfo | undefined => (Object.hasOwn(models, id) ? models[id] : undefined)
+
 /** The name VS Code resolves (`lookupLanguageModelByQualifiedName`): "<name> (<vendor>)". */
 export const vscodeModelName = (table: Table, modelId: string): string | undefined => {
-  const name = table.models[modelId]?.name
+  const name = ownInfo(table.models, modelId)?.name
   return name ? `${name} (${VENDOR})` : undefined
 }
 
@@ -178,7 +193,7 @@ export const vscodeModelName = (table: Table, modelId: string): string | undefin
  */
 export const multiplierCeiling = (table: Table, mainModel: string | undefined): number => {
   if (!mainModel) return 1
-  const info = table.models[mainModel.replace(/^copilot\//, '')]
+  const info = ownInfo(table.models, mainModel.replace(/^copilot\//, ''))
   if (!info) return 1
   return info.multiplier === undefined ? Number.POSITIVE_INFINITY : info.multiplier
 }
@@ -186,7 +201,7 @@ export const multiplierCeiling = (table: Table, mainModel: string | undefined): 
 /** Profiles VS Code can actually launch: a known display name and a multiplier within the ceiling. */
 export const localCandidates = (table: Table, ceiling: number): Profile[] =>
   table.profiles.filter(p => {
-    const info = table.models[p.model]
+    const info = ownInfo(table.models, p.model)
     return !!info?.name && (info.multiplier ?? 1) <= ceiling
   })
 
@@ -301,47 +316,139 @@ export const sessionModel = (sessionsDir: string, sessionId: string | undefined)
   return typeof row?.model === 'string' ? row.model : undefined
 }
 
+/** Unfinished `.tmp-*` and `.claim-*` files belong to a hook that may still be running: they go only after this long. */
+const STRAY_FILE_SECONDS = 3600
+
 /** Drop session/pending files older than `maxAgeSeconds`; never throws. */
 export const pruneDir = (dir: string, maxAgeSeconds: number): void => {
   try {
     if (!existsSync(dir)) return
-    const cutoff = Date.now() / 1000 - maxAgeSeconds
+    const now = Date.now() / 1000
     for (const name of readdirSync(dir)) {
       const path = join(dir, name)
-      const row = readJson(path) as { ts?: unknown } | undefined
-      if (typeof row?.ts !== 'number' || row.ts < cutoff) unlinkSync(path)
+      try {
+        if (!name.endsWith('.json')) {
+          if (now - statSync(path).mtimeMs / 1000 > STRAY_FILE_SECONDS) unlinkSync(path)
+          continue
+        }
+        const row = readJson(path) as { ts?: unknown } | undefined
+        if (typeof row?.ts !== 'number' || row.ts < now - maxAgeSeconds) unlinkSync(path)
+      } catch {
+        // gone or in use: leave it
+      }
     }
   } catch {
     // best effort
   }
 }
 
-export type PendingRow = Record<string, unknown> & { ts?: number; harness?: string }
+export type PendingRow = Record<string, unknown> & { ts?: number; harness?: string; tool_use_id?: string; agent_name?: string; agent_type?: string }
+
+/** A launch awaiting its outcome ages out after this long, so an abandoned one cannot make later stops ambiguous. */
+export const PENDING_TTL = 6 * 3600
+
+/** What the SubagentStop payload can say about the finished sub-agent; each field narrows the candidates when present. */
+export type StopHint = { agentId?: string; agentName?: string; agentType?: string }
+
+/** `popPending` found nothing (`undefined`), one launch (`row`) or several it cannot tell apart (`ambiguous`, no row). */
+export type PendingMatch = { row?: PendingRow; ambiguous?: boolean }
+
+const CLAIM = '.claim-'
 
 /**
- * Pop the decision awaiting an outcome. Exact session match first; VS Code's SubagentStop may carry the
- * sub-agent's own session id, so for that harness the oldest pending VS Code decision is taken instead.
+ * One file per launch, `<session>~<launch>.json` (`~` never occurs in a safeKey): parallel launches of one session no
+ * longer overwrite each other. The launch part is the VS Code `tool_use_id` when there is one. Written through a
+ * temporary file so a concurrent SubagentStop never reads half a row.
  */
-export const popPending = (pendingDir: string, sessionId: string | undefined, harness: Harness): PendingRow | undefined => {
-  const take = (path: string): PendingRow | undefined => {
-    const row = readJson(path) as PendingRow | undefined
-    try { unlinkSync(path) } catch { /* already gone */ }
-    return row
-  }
-  if (sessionId) {
-    const exact = join(pendingDir, `${safeKey(sessionId)}.json`)
-    if (existsSync(exact)) return take(exact)
-  }
-  if (harness !== 'vscode-local') return undefined
+export const writePending = (dir: string, sessionId: string, row: PendingRow): void => {
   try {
-    const rows = readdirSync(pendingDir)
-      .map(name => ({ path: join(pendingDir, name), row: readJson(join(pendingDir, name)) as PendingRow | undefined }))
-      .filter(r => r.row?.harness === 'vscode-local')
-      .sort((a, b) => (a.row?.ts ?? 0) - (b.row?.ts ?? 0))
-    return rows.length ? take(rows[0].path) : undefined
+    mkdirSync(dir, { recursive: true })
+    const name = `${safeKey(sessionId)}~${safeKey(row.tool_use_id || randomUUID())}.json`
+    const temp = join(dir, `${name}.tmp-${randomUUID()}`)
+    writeFileSync(temp, JSON.stringify(row))
+    renameSync(temp, join(dir, name))
+  } catch {
+    // best effort
+  }
+}
+
+type PendingFile = { name: string; path: string; row: PendingRow }
+
+const pendingFiles = (dir: string, maxAgeSeconds: number): PendingFile[] => {
+  const cutoff = Date.now() / 1000 - maxAgeSeconds
+  const files: PendingFile[] = []
+  try {
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith('.json')) continue
+      const path = join(dir, name)
+      const row = readJson(path) as PendingRow | undefined
+      if (!row || typeof row !== 'object') continue
+      if (typeof row.ts === 'number' && row.ts < cutoff) {
+        try { unlinkSync(path) } catch { /* already gone */ }
+        continue
+      }
+      files.push({ name, path, row })
+    }
+  } catch {
+    // no pending directory
+  }
+  return files.sort((a, b) => (a.row.ts ?? 0) - (b.row.ts ?? 0))
+}
+
+/** The session part of a pending file name; files written before launches got their own name are `<session>.json`. */
+const pendingSession = (name: string): string => name.replace(/\.json$/, '').split('~')[0]
+
+/** Take a launch for good: whoever renames the file owns it, a concurrent consumer that loses the rename gets nothing. */
+const claim = (file: PendingFile): PendingRow | undefined => {
+  const claimed = `${file.path}${CLAIM}${randomUUID()}`
+  try {
+    renameSync(file.path, claimed)
   } catch {
     return undefined
   }
+  try { unlinkSync(claimed) } catch { /* pruned later */ }
+  return file.row
+}
+
+/** Narrow by the most specific key both sides carry; a key that matches nobody is ignored rather than trusted. */
+const narrow = (files: PendingFile[], hint: StopHint): PendingFile[] => {
+  const steps: Array<(f: PendingFile) => boolean> = []
+  if (hint.agentId) steps.push(f => f.row.tool_use_id === hint.agentId)
+  if (hint.agentName) steps.push(f => f.row.agent_name === hint.agentName)
+  if (hint.agentType) steps.push(f => f.row.agent_type === hint.agentType)
+  let left = files
+  for (const step of steps) {
+    const kept = left.filter(step)
+    if (kept.length === 1) return kept
+    if (kept.length > 1) left = kept
+  }
+  return left
+}
+
+/**
+ * Pop the decision awaiting an outcome. The session's own launches first; VS Code's SubagentStop may carry the sub-agent's
+ * own session id, so for that harness any VS Code launch is a candidate when the session matches none. Candidates are
+ * narrowed by the keys both payloads share (`tool_use_id`/`agent_id`, agent name, agent type). The result is attributed only
+ * when one candidate remains. Limit: neither harness gives an id that ties a stop to its launch for sure, so identical
+ * parallel launches stay ambiguous. Within a session every launch the stop could belong to is consumed and the outcome is
+ * reported unassociated: leaving one behind would let a later stop of another look unique and be credited to the wrong
+ * profile. Across sessions nothing is consumed, since the owner is unknown.
+ */
+export const popPending = (pendingDir: string, sessionId: string | undefined, harness: Harness, hint: StopHint = {},
+  maxAgeSeconds = PENDING_TTL): PendingMatch | undefined => {
+  const all = pendingFiles(pendingDir, maxAgeSeconds)
+  const own = sessionId ? all.filter(f => pendingSession(f.name) === safeKey(sessionId)) : []
+  const sameSession = own.length > 0
+  if (!sameSession && harness !== 'vscode-local') return undefined
+  const candidates = sameSession ? own : all.filter(f => f.row.harness === 'vscode-local')
+  if (candidates.length === 0) return undefined
+  const left = narrow(candidates, hint)
+  if (left.length === 1) {
+    const row = claim(left[0])
+    return row ? { row } : undefined
+  }
+  if (sameSession) for (const file of left) claim(file)
+  return { ambiguous: true }
 }
 
 // ---- the account's model catalog (discovered through the Copilot CLI, see discover.ts) --------------
@@ -358,7 +465,7 @@ export const CATALOG_RETRY = 3600 // seconds before retrying after a failed one
  * applies no ceiling when the main model is Auto, whatever the CLI bills it as.
  */
 export const parseAcpModels = (result: unknown): Record<string, ModelInfo> => {
-  const out: Record<string, ModelInfo> = {}
+  const out: Record<string, ModelInfo> = Object.create(null)
   const list = (result as { models?: { availableModels?: unknown } } | undefined)?.models?.availableModels
   if (!Array.isArray(list)) return out
   for (const entry of list) {
@@ -366,7 +473,7 @@ export const parseAcpModels = (result: unknown): Record<string, ModelInfo> => {
     if (typeof e.modelId !== 'string' || !e.modelId) continue
     const meta = e._meta ?? {}
     if (typeof meta.copilotEnablement === 'string' && meta.copilotEnablement !== 'enabled') continue
-    const info: ModelInfo = { ...(out[e.modelId] ?? {}) }
+    const info: ModelInfo = { ...ownInfo(out, e.modelId) }
     if (typeof e.name === 'string' && e.name) info.name = e.name
     const usage = typeof meta.copilotUsage === 'string' ? Number.parseFloat(meta.copilotUsage) : typeof meta.copilotUsage === 'number' ? meta.copilotUsage : Number.NaN
     if (e.modelId !== 'auto' && Number.isFinite(usage) && usage >= 0) info.multiplier = usage
@@ -387,13 +494,15 @@ export const catalogFresh = (catalog: Catalog | undefined, now = Date.now() / 10
  */
 export const applyCatalog = (table: Table, catalog: Catalog | undefined): { table: Table; dropped: string[]; warning?: string } => {
   if (!catalog || !catalog.models || Object.keys(catalog.models).length === 0) return { table, dropped: [] }
-  const models: Record<string, ModelInfo> = { ...table.models }
-  for (const [id, info] of Object.entries(catalog.models)) models[id] = { ...models[id], ...info }
-  const profiles = table.profiles.filter(p => p.model in catalog.models)
+  const models: Record<string, ModelInfo> = Object.create(null)
+  for (const [id, info] of Object.entries(table.models)) models[id] = info
+  for (const [id, info] of Object.entries(catalog.models)) models[id] = { ...ownInfo(models, id), ...info }
+  const offered = (model: string): boolean => Object.hasOwn(catalog.models, model)
+  const profiles = table.profiles.filter(p => offered(p.model))
   if (profiles.length === 0) {
     return { table: { ...table, models }, dropped: [], warning: 'no profile names a model the account offers; routing over the whole table' }
   }
-  const dropped = table.profiles.filter(p => !(p.model in catalog.models)).map(p => p.id)
+  const dropped = table.profiles.filter(p => !offered(p.model)).map(p => p.id)
   return { table: { ...table, models, profiles }, dropped }
 }
 

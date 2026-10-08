@@ -76,6 +76,9 @@ describe('zero configuration', () => {
     const outcome = JSON.parse(writes[1].text.trim())
     expect(outcome.accepted).toBe(true)
     expect(outcome.model).toBe('inherited')
+    // nothing ran under the suggested profile, so no report may credit it
+    expect(outcome.profile).toBe(null)
+    expect(outcome.suggested_profile).toBe('opus')
     // a second decision appends rather than overwrites
     await $.tool.call(typo)
     expect(files['/home/t/.taskshape/decisions.jsonl'].trim().split('\n').length).toBe(2)
@@ -93,6 +96,8 @@ describe('zero configuration', () => {
     const outcome = JSON.parse(files['/home/t/.taskshape/outcomes.jsonl'].trim().split('\n')[0])
     expect(outcome.model).toBe('claude-opus-5-5')
     expect(outcome.outcome).toBe('enforced')
+    expect(outcome.profile).toBe('opus')
+    expect(outcome.suggested_profile).toBe(null)
   })
 
   test('suggest mode keeps private task text in the launch but out of decisions and outcomes', { options: { mode: 'suggest', backend: 'heuristic' } }, async ($, on) => {
@@ -204,6 +209,16 @@ describe('zero configuration', () => {
     await $.tool.call({ ...coupled, subagent_type: 'fork' })
     expect(seen).toEqual([[undefined, 'haiku'], ['fork', undefined]])
   })
+
+  test('two concurrent launches keep both audit lines', { options: { backend: 'heuristic' } }, async ($, on) => {
+    const files: Record<string, string> = {}
+    wire(on, files, [])
+    on('tool.call', { tool: 'Agent' }, () => ({ result: 'done', text: 'done' }))
+    await Promise.all([$.tool.call(coupled), $.tool.call(typo)])
+    const decisions = files['/home/t/.taskshape/decisions.jsonl'].trim().split('\n').map(line => JSON.parse(line))
+    expect(decisions.map(d => d.shape).sort()).toEqual(['coupled', 'routine'])
+    expect(files['/home/t/.taskshape/outcomes.jsonl'].trim().split('\n').length).toBe(2)
+  })
 })
 
 describe('profiles file', () => {
@@ -218,15 +233,55 @@ describe('profiles file', () => {
     expect(JSON.parse(files['/home/t/.taskshape/decisions.jsonl'].trim()).profile).toBe('only-sonnet')
   })
 
-  test('an unreadable or invalid profiles.json falls back to the built-in table with a warning', { options: { mode: 'enforce', backend: 'heuristic', profiles: '/etc/bad.json' } }, async ($, on) => {
+  test('an invalid profiles.json never rewrites the launch with the built-in table and records a warning', { options: { mode: 'enforce', backend: 'heuristic', profiles: '/etc/bad.json' } }, async ($, on) => {
     const files: Record<string, string> = { '/etc/bad.json': '{"version": 2}' }
     const seen: unknown[] = []
     wire(on, files, [])
     on('tool.call', { tool: 'Agent' }, (_: unknown, e: { model?: string }) => { seen.push(e.model); return { result: 'done', text: 'done' } })
     await $.tool.call(coupled)
-    expect(seen).toEqual(['opus'])
+    expect(seen).toEqual([undefined])
     const decision = JSON.parse(files['/home/t/.taskshape/decisions.jsonl'].trim())
-    expect(decision.warnings.join(' ')).toContain('built-in profiles used')
+    expect(decision.mode).toBe('suggested')
+    expect(decision.warnings.join(' ')).toContain('profiles file unusable')
+    const outcome = JSON.parse(files['/home/t/.taskshape/outcomes.jsonl'].trim())
+    expect(outcome.profile).toBe(null)
+    expect(outcome.suggested_profile).toBe('opus')
+  })
+
+  test('an unreadable profiles.json never rewrites the launch', { options: { mode: 'enforce', backend: 'heuristic', profiles: '/etc/missing.json' } }, async ($, on) => {
+    const files: Record<string, string> = {}
+    const seen: unknown[] = []
+    wire(on, files, [])
+    on('tool.call', { tool: 'Agent' }, (_: unknown, e: { model?: string }) => { seen.push(e.model); return { result: 'done', text: 'done' } })
+    await $.tool.call(coupled)
+    expect(seen).toEqual([undefined])
+    expect(JSON.parse(files['/home/t/.taskshape/decisions.jsonl'].trim()).warnings.join(' ')).toContain('profiles file unusable')
+  })
+})
+
+describe('budget', () => {
+  test('an unknown budget name does not fall back to the default tier: the launch stays unchanged with a warning', { options: { mode: 'enforce', backend: 'heuristic', budget: 'ecnomy' } }, async ($, on) => {
+    const files: Record<string, string> = {}
+    const seen: unknown[] = []
+    wire(on, files, [])
+    on('tool.call', { tool: 'Agent' }, (_: unknown, e: { model?: string }) => { seen.push(e.model); return { result: 'done', text: 'done' } })
+    await $.tool.call(coupled)
+    expect(seen).toEqual([undefined])
+    const decision = JSON.parse(files['/home/t/.taskshape/decisions.jsonl'].trim())
+    expect(decision.mode).toBe('suggested')
+    expect(decision.warnings.join(' ')).toContain('unknown budget "ecnomy"')
+    expect(JSON.parse(files['/home/t/.taskshape/outcomes.jsonl'].trim()).profile).toBe(null)
+  })
+
+  test('a budget the profiles file defines still caps the choice', { options: { mode: 'enforce', backend: 'heuristic', budget: 'tight', profiles: '/etc/p.json' } }, async ($, on) => {
+    const files: Record<string, string> = { '/etc/p.json': JSON.stringify({ version: 1, budgets: { tight: { max_cost_tier: 1 } }, profiles: [
+      { id: 'cheap', model: 'claude-haiku-4-5', capability: 2, cost_tier: 1 },
+      { id: 'big', model: 'claude-opus-5-5', capability: 4, cost_tier: 4 }] }) }
+    const seen: unknown[] = []
+    wire(on, files, [])
+    on('tool.call', { tool: 'Agent' }, (_: unknown, e: { model?: string }) => { seen.push(e.model); return { result: 'done', text: 'done' } })
+    await $.tool.call(coupled)
+    expect(seen).toEqual(['haiku'])
   })
 })
 

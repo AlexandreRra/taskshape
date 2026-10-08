@@ -63,6 +63,8 @@ The large model file is about 650 MB, and the Python/PyTorch runtime can use sev
 - A profile whose model id cannot map to a Claude alias is reported and left unchanged.
 - Explicit model launches are kept by default.
 - Forks inherit the parent model and are skipped.
+- A profiles file that cannot be read or validated, or a `budget` name the profiles do not define, never rewrites the model: the launch stays unchanged, the decision is logged as `suggested` with a warning.
+- In `suggest` mode (or when nothing was rewritten) the outcome record carries `profile: null` and the sibling `suggested_profile`, so reports do not credit an unexecuted profile.
 - An outcome counts as accepted when the tool call did not error. Add richer review signals later with `taskshape record` or the MCP `record` tool.
 
 ## Python and MCP tools

@@ -21,17 +21,28 @@ const main = () => {
   if (harness === 'unknown') return
   const paths = dataPaths(dataDir())
   ensureConfig(paths.config)
-  const decision = popPending(paths.pending, input.session_id ?? input.sessionId, harness)
-  if (!decision) return
+  const sessionId = input.session_id ?? input.sessionId
+  const agentType = input.agentType ?? input.agent_type
+  const match = popPending(paths.pending, sessionId, harness, { agentId: input.agent_id, agentName: input.agentName, agentType })
+  if (!match) return
+  if (!match.row) {
+    // several launches fit this stop and nothing tells them apart: say so instead of crediting the wrong profile
+    appendLine(paths.decisions, { ts: Date.now() / 1000, origin: harness === 'vscode-local' ? 'vscode-plugin' : 'copilot-plugin', harness,
+      mode: 'skipped', why: 'outcome not attributed: several pending launches fit this stop', sessionId: sessionId ?? null })
+    return
+  }
+  const decision = match.row
   const started = typeof decision.ts === 'number' ? decision.ts : undefined
   const now = Date.now() / 1000
   const enforced = decision.mode === 'enforced'
   const row = { ts: now, task_sha256: null, origin: decision.origin ?? (harness === 'vscode-local' ? 'vscode-plugin' : 'copilot-plugin'), harness,
-    shape: decision.shape ?? null, profile: decision.profile ?? null,
+    shape: decision.shape ?? null,
+    // in suggest mode the profile was never run: keep it apart so no report credits it with this result
+    profile: enforced ? decision.profile ?? null : null, suggested_profile: enforced ? null : decision.profile ?? null,
     model: enforced ? decision.model : 'inherited', effort: enforced ? decision.effort : 'default',
     accepted: harness === 'copilot-cli' ? input.stopReason === 'end_turn' : null,
     outcome: decision.mode ?? null, stop_reason: input.stopReason ?? null, stop_hook_active: input.stop_hook_active ?? null,
-    agent_type: input.agentType ?? input.agent_type ?? null, input_tokens: null, output_tokens: null,
+    agent_type: agentType ?? null, input_tokens: null, output_tokens: null,
     seconds: started ? Math.round((now - started) * 10) / 10 : null, cost_usd: null }
   appendLine(paths.outcomes, row)
 }

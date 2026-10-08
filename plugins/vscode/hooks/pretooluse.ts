@@ -6,8 +6,8 @@ import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import {
-  DEFAULT_CONFIG, type Config, type Decide, type Decision, type HookInput, type LocalInput, appendLine, applyCatalog, dataDir, dataPaths,
-  detectHarness, ensureConfig, loadProfilesFrom, originFor, outcomeFor, parseConfig, readJson, routeClassified, routeEmbedded, sessionModel, writeJson,
+  DEFAULT_CONFIG, type Config, type Decide, type Decision, type HookInput, type LocalInput, appendLine, applyCatalog, budgetCap, dataDir, dataPaths,
+  detectHarness, ensureConfig, loadProfilesFrom, originFor, outcomeFor, parseConfig, readJson, routeClassified, routeEmbedded, sessionModel, writePending,
 } from './harness.ts'
 import { refreshCatalog } from './discover.ts'
 import type { Profile } from './policy.ts'
@@ -88,6 +88,17 @@ const main = async () => {
   if (applied.warning) warnings.push(applied.warning)
   const sessionId = harness === 'vscode-local' ? (input as LocalInput).session_id : (input as { sessionId?: string }).sessionId
   const mainModel = harness === 'vscode-local' ? sessionModel(paths.sessions, sessionId) : undefined
+  if (!config.command) {
+    // a budget the table lacks cannot be routed: refuse before spending a classification on it
+    try {
+      budgetCap(table, config.budget)
+    } catch (error) {
+      process.stderr.write(`Taskshape: routing failed: ${errorText(error)}; original model kept\n`)
+      appendLine(paths.decisions, { ts: Date.now() / 1000, origin, harness, mode: 'skipped', sessionId: sessionId ?? null,
+        backend: config.backend, error: `routing failed: ${errorText(error)}` })
+      return
+    }
+  }
   let classification: LayaClassification | undefined
   const classifyPrompt = config.command || config.backend === 'heuristic' ? undefined : promptToClassify(input, config, harness)
   if (classifyPrompt) {
@@ -135,7 +146,11 @@ const main = async () => {
     catalog: catalog && Object.keys(catalog.models).length > 0 ? { source: catalog.source, ts: catalog.ts, models: Object.keys(catalog.models).length, error: catalog.error ?? null } : null,
     unavailable_profiles: applied.dropped }
   appendLine(paths.decisions, row)
-  if (sessionId) writeJson(paths.pending, sessionId, row)
+  // one pending file per launch, with the keys SubagentStop can match on (kept out of the audit row)
+  if (sessionId) {
+    writePending(paths.pending, sessionId, { ...row, tool_use_id: (input as LocalInput).tool_use_id,
+      agent_name: typeof args.name === 'string' ? args.name : undefined, agent_type: row.agent_type ?? undefined })
+  }
   if (outcome.kind === 'enforce') process.stdout.write(JSON.stringify(outcome.output))
 }
 

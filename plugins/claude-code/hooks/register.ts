@@ -19,7 +19,8 @@ export type Decision = {
   warnings: string[]
 }
 
-type Loaded = { profiles: Profile[]; budgets: Budgets; source: string; warning?: string }
+// unusable: the user's profiles file could not be read or validated, so the built-in table must not rewrite launches.
+type Loaded = { profiles: Profile[]; budgets: Budgets; source: string; warning?: string; unusable?: boolean }
 type Backend = 'laya' | 'heuristic'
 type ClassifyResult = { shape: Shape; answer_confidence: number; source: string }
 
@@ -44,10 +45,15 @@ export const routeEmbedded = (task: string, phase: Phase, loaded: Loaded, budget
   return decisionFromShape(shape, RUBRIC_CONFIDENCE, 'rubric', phase, loaded, budget)
 }
 
+// A budget name the table does not hold has no cost cap of its own; an absent `default` keeps the table's implicit tier 5.
+const budgetCap = (loaded: Loaded, budget: string): number | undefined =>
+  Object.hasOwn(loaded.budgets, budget) ? loaded.budgets[budget]?.max_cost_tier : budget === 'default' ? 5 : undefined
+
 const decisionFromShape = (shape: Shape, confidence: number, source: string, phase: Phase, loaded: Loaded, budget: string): Decision => {
-  const cap = loaded.budgets[budget]?.max_cost_tier ?? loaded.budgets.default?.max_cost_tier ?? 5
-  const choice = choose(shape, loaded.profiles, phase, cap)
+  const cap = budgetCap(loaded, budget)
+  const choice = choose(shape, loaded.profiles, phase, cap ?? loaded.budgets.default?.max_cost_tier ?? 5)
   const warnings = [...choice.warnings]
+  if (cap === undefined) warnings.push(`unknown budget "${budget}": the launch model is not rewritten`)
   if (loaded.warning) warnings.push(loaded.warning)
   return { task: '', phase, shape, profile: choice.profile.id, model: choice.profile.model,
     effort: choice.profile.effort ?? 'default', reason: choice.reason, source, answer_confidence: confidence, warnings }
@@ -84,7 +90,7 @@ async function loadProfiles($: EngineInterface, profilesPath: string): Promise<L
       const parsed = validateProfiles(JSON.parse(String(await $.fs.read(profilesPath))))
       return { ...parsed, source: profilesPath }
     } catch (error) {
-      return { ...BUILTIN, warning: `profiles file unusable, built-in profiles used: ${String(error).slice(0, 120)}` }
+      return { ...BUILTIN, unusable: true, warning: `profiles file unusable, launch model not rewritten: ${String(error).slice(0, 120)}` }
     }
   })()
   return loadedProfiles
@@ -100,13 +106,21 @@ async function dataDir($: EngineInterface): Promise<string> {
   return dataFolder
 }
 
-async function appendLine($: EngineInterface, path: string, row: unknown): Promise<void> {
-  try {
-    const existing = (await $.fs.exists(path)) ? String(await $.fs.read(path)) : ''
-    await $.fs.write(path, existing + JSON.stringify(row) + '\n')
-  } catch {
-    // The audit trail is best effort; a full disk or a read-only folder must not touch the launch.
-  }
+// $.fs has no append, so each write rereads the file; one chain per path keeps parallel launches from overwriting each other's line.
+const appendQueues = new Map<string, Promise<void>>()
+
+function appendLine($: EngineInterface, path: string, row: unknown): Promise<void> {
+  const turn = (appendQueues.get(path) ?? Promise.resolve()).then(async () => {
+    try {
+      const existing = (await $.fs.exists(path)) ? String(await $.fs.read(path)) : ''
+      await $.fs.write(path, existing + JSON.stringify(row) + '\n')
+    } catch {
+      // The audit trail is best effort; a full disk or a read-only folder must not touch the launch.
+    }
+  })
+  appendQueues.set(path, turn)
+  void turn.then(() => { if (appendQueues.get(path) === turn) appendQueues.delete(path) })
+  return turn
 }
 
 async function routeCli($: EngineInterface, command: string, task: string, phase: Phase, loaded: Loaded, budget: string,
@@ -159,10 +173,13 @@ export const register: Register = (on, options) => {
     const decisionsPath = decisionsOption || `${folder}/decisions.jsonl`
     const recordsPath = recordsOption || `${folder}/outcomes.jsonl`
     const alias = aliasFor(decision.model)
-    const apply = enforce && alias !== undefined
+    // An unusable profiles file or an unknown budget leaves no policy to enforce: observe instead of rewriting.
+    const routable = !loaded.unusable && budgetCap(loaded, budget) !== undefined
+    const apply = enforce && routable && alias !== undefined
     const effort = decision.effort && decision.effort !== 'default' ? ' ' + decision.effort : ''
     $.ui.status(`${name}: ${apply ? 'enforced' : 'suggested'} ${decision.shape} -> ${decision.profile} (${decision.model}${effort}, ${decision.source})`)
-    if (enforce && alias === undefined) $.ui.toast(`${name}: ${decision.model} is not a Claude Code model alias; launch unchanged`)
+    if (enforce && !routable) $.ui.toast(`${name}: ${loaded.warning ?? `unknown budget "${budget}"`}; launch unchanged`)
+    else if (enforce && alias === undefined) $.ui.toast(`${name}: ${decision.model} is not a Claude Code model alias; launch unchanged`)
     await appendLine($, decisionsPath, { ts: Date.now() / 1000, origin: 'claude-code-plugin', mode: apply ? 'enforced' : 'suggested',
       phase, shape: decision.shape, profile: decision.profile, model: decision.model, effort: decision.effort,
       answer_confidence: decision.answer_confidence, source: decision.source, reason: decision.reason, warnings: decision.warnings,
@@ -170,7 +187,9 @@ export const register: Register = (on, options) => {
     const started = Date.now()
     const ran = await next(apply ? { ...e, model: alias } : e)
     if (ran.deny === undefined) {
-      await appendLine($, recordsPath, { ts: Date.now() / 1000, task_sha256: null, shape: decision.shape, profile: decision.profile,
+      // a suggestion never ran: keep its profile apart so no report credits it with this result
+      await appendLine($, recordsPath, { ts: Date.now() / 1000, task_sha256: null, shape: decision.shape,
+        profile: apply ? decision.profile : null, suggested_profile: apply ? null : decision.profile,
         model: apply ? decision.model : (e.model ?? 'inherited'), effort: apply ? decision.effort : 'default',
         accepted: ran.isError !== true, outcome: apply ? 'enforced' : 'suggested', input_tokens: null, output_tokens: null,
         seconds: Math.round((Date.now() - started) / 100) / 10, cost_usd: null })

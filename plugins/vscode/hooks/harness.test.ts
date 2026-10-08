@@ -1,15 +1,15 @@
 // Run: node --experimental-strip-types --test plugins/copilot/hooks/harness.test.ts   (or plugins/vscode/hooks/harness.test.ts)
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { spawnSync } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
+import { spawn, spawnSync } from 'node:child_process'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   CATALOG_RETRY, CATALOG_TTL, DEFAULT_CONFIG, type Decide, applyCatalog, catalogFresh, detectHarness, ensureConfig, loadProfilesFrom,
-  localCandidates, multiplierCeiling, outcomeFor, parseAcpModels, parseConfig, popPending, routeClassified, routeEmbedded, vscodeModelName, writeJson,
+  localCandidates, multiplierCeiling, outcomeFor, parseAcpModels, parseConfig, popPending, pruneDir, routeClassified, routeEmbedded, vscodeModelName, writePending,
 } from './harness.ts'
 import { discoverModels, resolveSpawn } from './discover.ts'
 
@@ -114,8 +114,8 @@ test('model catalog: the ACP list is parsed, trusted for a day, and narrows the 
   assert.deepEqual(models['claude-haiku-4.5'], { name: 'Claude Haiku 4.5', multiplier: 0.33 })
   assert.deepEqual(models['gpt-5-mini'], { name: 'GPT-5 mini', multiplier: 0 })
   assert.deepEqual(models.auto, { name: 'Auto' }, 'Auto keeps no multiplier: VS Code applies no ceiling under it')
-  assert.deepEqual(parseAcpModels({}), {})
-  assert.deepEqual(parseAcpModels({ models: { availableModels: [{ name: 'no id' }, { modelId: '' }] } }), {})
+  assert.deepEqual(Object.keys(parseAcpModels({})), [])
+  assert.deepEqual(Object.keys(parseAcpModels({ models: { availableModels: [{ name: 'no id' }, { modelId: '' }] } })), [])
 
   const now = 1_800_000_000
   assert.equal(catalogFresh(undefined, now), false)
@@ -273,7 +273,9 @@ test('persistent audit files omit raw prompt and description for both harnesses 
       } else {
         assert.equal(ran.stdout, '', `${item.label}: suggest mode must be quiet`)
       }
-      const pending = readFileSync(join(home, 'pending', `${item.session}.json`), 'utf8')
+      const pendingFiles = pendingNames(home).filter(name => name.startsWith(`${item.session}~`))
+      assert.equal(pendingFiles.length, 1, `${item.label}: one pending file per launch`)
+      const pending = readFileSync(join(home, 'pending', pendingFiles[0]), 'utf8')
       assert.ok(pending.length > 0, `${item.label}: pending row must be written before outcome`)
       assert.equal(pending.includes(SECRET_PROMPT), false)
       assert.equal(pending.includes(SECRET_DESCRIPTION), false)
@@ -349,17 +351,70 @@ test('invalid profiles and model maps are refused', () => {
   assert.throws(() => loadProfilesFrom('{"version": 1, "profiles": [{"id": "a", "model": "m", "capability": 1, "cost_tier": 0}], "models": {"m": {"multiplier": -1}}}'))
 })
 
-test('pending decisions: exact session first, oldest VS Code decision as the fallback', () => {
+test('pending decisions: one file per launch, the session first, VS Code strays only when unambiguous', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'taskshape-pending-'))
+  const now = Date.now() / 1000
+  try {
+    // parallel launches of one session each keep their own pending file
+    writePending(dir, 'a', { ts: now - 30, harness: 'vscode-local', profile: 'first', tool_use_id: 'u1' })
+    writePending(dir, 'a', { ts: now - 20, harness: 'vscode-local', profile: 'second', tool_use_id: 'u2' })
+    writePending(dir, 'a', { ts: now - 10, harness: 'vscode-local', profile: 'third' })
+    assert.equal(readdirSync(dir).length, 3)
+    // out of order: the stop that names its launch gets that launch, not the oldest
+    assert.equal(popPending(dir, 'a', 'vscode-local', { agentId: 'u2' })?.row?.profile, 'second')
+    assert.equal(popPending(dir, 'a', 'vscode-local', { agentId: 'u1' })?.row?.profile, 'first')
+    // one launch left in the session: it is the one
+    assert.equal(popPending(dir, 'a', 'vscode-local')?.row?.profile, 'third')
+    assert.equal(popPending(dir, 'a', 'vscode-local'), undefined)
+
+    // another session's stop (VS Code sub-agents may use their own session id): one candidate is taken, several are not guessed
+    writePending(dir, 'b', { ts: now - 20, harness: 'vscode-local', profile: 'old' })
+    writePending(dir, 'c', { ts: now - 10, harness: 'vscode-local', profile: 'new' })
+    writePending(dir, 'cli', { ts: now - 40, harness: 'copilot-cli', profile: 'cli' })
+    assert.deepEqual(popPending(dir, 'zzz', 'vscode-local'), { ambiguous: true })
+    assert.equal(readdirSync(dir).length, 3, 'an unattributable stop consumes nothing')
+    assert.equal(popPending(dir, 'zzz', 'copilot-cli'), undefined)
+    assert.equal(popPending(dir, 'c', 'vscode-local')?.row?.profile, 'new')
+    assert.equal(popPending(dir, 'zzz', 'vscode-local')?.row?.profile, 'old')
+    assert.equal(popPending(dir, 'cli', 'copilot-cli')?.row?.profile, 'cli')
+
+    // identical parallel launches of one session that stop in another order (C, B, A): no stop is credited, and none can
+    // be credited later because the ambiguous launches are all consumed together
+    for (const id of ['A', 'B', 'C']) writePending(dir, 's', { ts: now - 20, harness: 'copilot-cli', profile: `p${id}`, agent_type: 'general-purpose' })
+    assert.deepEqual(popPending(dir, 's', 'copilot-cli', { agentType: 'general-purpose' }), { ambiguous: true })
+    for (let stop = 0; stop < 2; stop++) assert.equal(popPending(dir, 's', 'copilot-cli', { agentType: 'general-purpose' })?.row, undefined)
+    assert.deepEqual(readdirSync(dir).filter(name => name.startsWith('s~')), [])
+    // names tell parallel launches of the same type apart
+    writePending(dir, 'n', { ts: now - 20, harness: 'copilot-cli', profile: 'p1', agent_type: 'general-purpose', agent_name: 'alpha' })
+    writePending(dir, 'n', { ts: now - 10, harness: 'copilot-cli', profile: 'p2', agent_type: 'general-purpose', agent_name: 'beta' })
+    assert.equal(popPending(dir, 'n', 'copilot-cli', { agentName: 'beta', agentType: 'general-purpose' })?.row?.profile, 'p2')
+    assert.equal(popPending(dir, 'n', 'copilot-cli', { agentName: 'unknown', agentType: 'general-purpose' })?.row?.profile, 'p1')
+
+    // launches that never stopped age out instead of making later stops ambiguous
+    writePending(dir, 'x', { ts: now - 7 * 3600, harness: 'vscode-local', profile: 'abandoned' })
+    writePending(dir, 'y', { ts: now - 5, harness: 'vscode-local', profile: 'live' })
+    assert.equal(popPending(dir, 'zzz', 'vscode-local')?.row?.profile, 'live')
+    assert.deepEqual(readdirSync(dir), [])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('pending decisions: concurrent stops cannot consume one launch twice', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'taskshape-pending-'))
   try {
-    writeJson(dir, 'a', { ts: 10, harness: 'vscode-local', profile: 'old' })
-    writeJson(dir, 'b', { ts: 20, harness: 'vscode-local', profile: 'new' })
-    writeJson(dir, 'c', { ts: 5, harness: 'copilot-cli', profile: 'cli' })
-    assert.equal(popPending(dir, 'b', 'vscode-local')?.profile, 'new')
-    assert.equal(popPending(dir, 'zzz', 'copilot-cli'), undefined)
-    assert.equal(popPending(dir, 'zzz', 'vscode-local')?.profile, 'old')
-    assert.equal(popPending(dir, 'zzz', 'vscode-local'), undefined)
-    assert.equal(popPending(dir, 'c', 'copilot-cli')?.profile, 'cli')
+    writePending(dir, 'race', { ts: Date.now() / 1000, harness: 'copilot-cli', profile: 'only' })
+    const script = `import(${JSON.stringify(pathToFileURL(join(here, 'harness.ts')).href)}).then(m => {
+      const r = m.popPending(${JSON.stringify(dir)}, 'race', 'copilot-cli'); process.stdout.write(JSON.stringify(r ?? null)) })`
+    const runners = Array.from({ length: 8 }, () => new Promise<string>(resolve => {
+      const child = spawn(process.execPath, ['--no-warnings', '--experimental-strip-types', '-e', script], { stdio: ['ignore', 'pipe', 'inherit'] })
+      let out = ''
+      child.stdout.on('data', chunk => { out += String(chunk) })
+      child.on('close', () => resolve(out))
+    }))
+    const results = (await Promise.all(runners)).map(text => JSON.parse(text))
+    assert.equal(results.filter(r => r?.row?.profile === 'only').length, 1, JSON.stringify(results))
+    assert.deepEqual(readdirSync(dir), [])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -399,8 +454,10 @@ const installPluginFixture = (dir: string, runtimeSource?: string): string => {
   return hooks
 }
 
+const pendingNames = (home: string): string[] => (existsSync(join(home, 'pending')) ? readdirSync(join(home, 'pending')) : [])
+
 const allPersistedText = (home: string): string =>
-  ['decisions.jsonl', 'outcomes.jsonl', join('pending', 's1.json'), join('pending', 'v1.json'), join('pending', 'v2.json'), join('pending', 'v3.json')]
+  ['decisions.jsonl', 'outcomes.jsonl', ...pendingNames(home).map(name => join('pending', name))]
     .map(name => {
       const path = join(home, name)
       return existsSync(path) ? readFileSync(path, 'utf8') : ''
@@ -429,6 +486,113 @@ exec "${process.execPath}" "$@"
   }
 }
 
+test('an unknown budget name is refused instead of routing under another budget', () => {
+  assert.throws(() => routeEmbedded(TYPO, 'work', table, 'econony'), /unknown budget "econony"; known: economy, standard, default/)
+  assert.throws(() => routeClassified(TYPO, 'work', table, 'econony', 'mechanical', 0.9, 'laya'), /unknown budget/)
+  for (const inherited of ['constructor', '__proto__', 'toString']) assert.throws(() => routeEmbedded(TYPO, 'work', table, inherited), /unknown budget/)
+  assert.equal(routeEmbedded(TYPO, 'work', table, 'economy').phase, 'work')
+  // the built-in name keeps working for a custom table that defines no "default" budget
+  const custom = loadProfilesFrom(JSON.stringify({ version: 1, profiles: [{ id: 'a', model: 'm', capability: 4, cost_tier: 5 }], budgets: { thrifty: { max_cost_tier: 5 } } }))
+  assert.equal(routeEmbedded(TYPO, 'work', custom, 'default').profile, 'a')
+  assert.throws(() => routeEmbedded(TYPO, 'work', custom, 'economy'), /known: thrifty/)
+})
+
+test('an unknown budget in the config keeps the original model and records why', () => {
+  const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
+  try {
+    for (const [payload, mode] of [[task(COUPLED), 'enforce'], [sub(COUPLED), 'suggest']] as const) {
+      const ran = runHook('pretooluse.ts', payload, home, { TASKSHAPE_BUDGET: 'econony', TASKSHAPE_MODE: mode })
+      assert.equal(ran.status, 0, ran.stderr)
+      assert.equal(ran.stdout, '', `${mode}: the launch goes through unchanged`)
+      assert.match(ran.stderr, /unknown budget "econony"/)
+    }
+    const rows = readFileSync(join(home, 'decisions.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
+    assert.equal(rows.length, 2)
+    assert.ok(rows.every(r => r.mode === 'skipped' && /unknown budget "econony"/.test(r.error)), JSON.stringify(rows))
+    assert.deepEqual(pendingNames(home), [])
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('an unknown budget is refused before the classifier runs', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'taskshape-laya-budget-'))
+  const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
+  try {
+    const marker = join(tmp, 'classified')
+    const hooks = installPluginFixture(tmp, `
+      import { writeFileSync } from 'node:fs'
+      export const classifyLocal = async () => { writeFileSync(${JSON.stringify(marker)}, 'called'); return { source: 'laya', shape: 'coupled', answer_confidence: 0.9 } }
+      export const ensureRuntime = async () => ({ state: 'ready', message: 'mock ready' })
+    `)
+    const ran = runHook('pretooluse.ts', task(COUPLED), home, { TASKSHAPE_BACKEND: 'laya', TASKSHAPE_BUDGET: 'econony' }, hooks)
+    assert.equal(ran.status, 0, ran.stderr)
+    assert.equal(ran.stdout, '')
+    assert.equal(existsSync(marker), false, 'no inference is spent on a launch that cannot be routed')
+    const rows = readFileSync(join(home, 'decisions.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].mode, 'skipped')
+    assert.match(rows[0].error, /unknown budget "econony"/)
+    const fine = runHook('pretooluse.ts', task(COUPLED), home, { TASKSHAPE_BACKEND: 'laya', TASKSHAPE_BUDGET: 'economy' }, hooks)
+    assert.equal(fine.status, 0, fine.stderr)
+    assert.equal(existsSync(marker), true, 'a known budget still classifies')
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('pruneDir keeps in-flight temporary and claim files and still drops stale rows', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'taskshape-prune-'))
+  const now = Date.now() / 1000
+  try {
+    writePending(dir, 'fresh', { ts: now, profile: 'x' })
+    writePending(dir, 'stale', { ts: now - 10 * 24 * 3600, profile: 'y' })
+    writeFileSync(join(dir, 'a~b.json.tmp-1'), '{"ts":')
+    writeFileSync(join(dir, 'a~c.json.claim-2'), '{"ts":1}')
+    writeFileSync(join(dir, 'old~d.json.tmp-3'), '{"ts":')
+    const old = new Date(Date.now() - 2 * 3600 * 1000)
+    utimesSync(join(dir, 'old~d.json.tmp-3'), old, old)
+    writeFileSync(join(dir, 'broken.json'), 'not json')
+    pruneDir(dir, 7 * 24 * 3600)
+    assert.deepEqual(readdirSync(dir).sort(), [
+      'a~b.json.tmp-1', 'a~c.json.claim-2', readdirSync(dir).find(name => name.startsWith('fresh~')) as string].sort())
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('model maps ignore inherited keys: constructor, __proto__ and toString are never offered models', () => {
+  const protoTable = loadProfilesFrom(JSON.stringify({ version: 1, profiles: [
+    { id: 'c', model: 'constructor', capability: 4, cost_tier: 0 },
+    { id: 't', model: 'toString', capability: 4, cost_tier: 0 },
+    { id: 'p', model: '__proto__', capability: 4, cost_tier: 0 },
+    { id: 'real', model: 'real-model', capability: 4, cost_tier: 1 },
+  ], models: { 'real-model': { name: 'Real', multiplier: 1 } } }))
+  for (const id of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+    assert.equal(vscodeModelName(protoTable, id), undefined, id)
+    assert.equal(multiplierCeiling(protoTable, id), 1, `${id}: unknown ids are assumed 1x`)
+  }
+  assert.deepEqual(localCandidates(protoTable, 1).map(p => p.id), ['real'])
+  // a catalog that offers one real model drops every profile whose model only exists on the prototype chain
+  const catalog = { ts: 1, source: 'copilot-acp', models: { 'real-model': { name: 'Real', multiplier: 1 } } }
+  const applied = applyCatalog(protoTable, catalog)
+  assert.deepEqual(applied.table.profiles.map(p => p.id), ['real'])
+  assert.deepEqual(applied.dropped, ['c', 't', 'p'])
+  assert.equal(Object.getPrototypeOf(applied.table.models), null)
+  assert.equal(Object.getPrototypeOf(parseAcpModels(acpResult(ACP_MODELS))), null)
+  // hostile ids from the Copilot CLI become plain own entries and change no prototype
+  const hostile = parseAcpModels({ models: { availableModels: [
+    { modelId: '__proto__', name: 'Evil', _meta: { copilotUsage: '1x' } }, { modelId: 'constructor', name: 'Ctor' }, { modelId: 'real-model', name: 'Real' }] } })
+  assert.deepEqual(Object.keys(hostile).sort(), ['__proto__', 'constructor', 'real-model'])
+  assert.equal(Object.getPrototypeOf(hostile), null)
+  assert.equal(({} as Record<string, unknown>).name, undefined)
+  assert.equal(({} as Record<string, unknown>).multiplier, undefined)
+  const merged = applyCatalog(loadProfilesFrom(JSON.stringify({ version: 1, profiles: [{ id: 'real', model: 'real-model', capability: 1, cost_tier: 0 }] })), { ts: 1, source: 'x', models: hostile })
+  assert.equal(({} as Record<string, unknown>).name, undefined, 'merging a __proto__ id leaves Object.prototype alone')
+  assert.equal(Object.getPrototypeOf(merged.table.models), null)
+})
+
 test('discovery starts the Copilot CLI without a shell: PATH/PATHEXT resolution, quoted cmd.exe only for .cmd shims', () => {
   const present = (...files: string[]) => (file: string) => files.includes(file)
   const win = (extra: Record<string, unknown> = {}) => ({ platform: 'win32', path: 'C:\\Windows;C:\\Users\\me\\bin', pathext: '.COM;.EXE;.BAT;.CMD', comspec: 'C:\\Windows\\System32\\cmd.exe', ...extra })
@@ -449,6 +613,36 @@ test('discovery starts the Copilot CLI without a shell: PATH/PATHEXT resolution,
   // shell metacharacters in a configured shim path are refused rather than quoted
   const evil = 'C:\\x\\a&calc.cmd'
   assert.match((resolveSpawn(evil, ['--acp'], win({ exists: present(evil) })) as { error: string }).error, /cannot be started through cmd\.exe safely/)
+})
+
+test('SubagentStop: a suggested launch is not credited to the profile that was never run', () => {
+  const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
+  try {
+    const cases = [
+      { payload: { ...task(COUPLED), sessionId: 'sg-cli' }, mode: 'suggest', stop: { sessionId: 'sg-cli', agentType: 'general-purpose', stopReason: 'end_turn' } },
+      { payload: { ...sub(COUPLED), session_id: 'sg-vs' }, mode: 'suggest', stop: { session_id: 'sg-vs', agent_id: 'a', agent_type: 'default', stop_hook_active: false } },
+      { payload: { ...task(COUPLED), sessionId: 'en-cli' }, mode: 'enforce', stop: { sessionId: 'en-cli', agentType: 'general-purpose', stopReason: 'end_turn' } },
+    ] as const
+    for (const item of cases) {
+      assert.equal(runHook('pretooluse.ts', item.payload, home, { TASKSHAPE_MODE: item.mode }).status, 0)
+      assert.equal(runHook('subagentstop.ts', item.stop, home).status, 0)
+    }
+    const outcomes = readFileSync(join(home, 'outcomes.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
+    assert.equal(outcomes.length, 3)
+    for (const row of outcomes.slice(0, 2)) {
+      assert.equal(row.profile, null)
+      assert.equal(row.model, 'inherited')
+      assert.equal(row.outcome, 'suggested')
+      assert.equal(typeof row.suggested_profile, 'string')
+    }
+    assert.equal(outcomes[0].accepted, true, 'the stop reason is still recorded')
+    assert.equal(outcomes[1].accepted, null)
+    assert.equal(typeof outcomes[2].profile, 'string')
+    assert.equal(outcomes[2].suggested_profile, null)
+    assert.notEqual(outcomes[2].model, 'inherited')
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
 })
 
 test('end to end: the scripts answer both harnesses exactly as the hooks expect', () => {
@@ -482,15 +676,20 @@ test('end to end: the scripts answer both harnesses exactly as the hooks expect'
     assert.equal(quiet.stdout, '')
     // other tools are ignored silently
     assert.equal(runHook('pretooluse.ts', { tool_name: 'read_file', tool_input: { path: 'x' } }, home).stdout, '')
-    // SubagentStop for VS Code pops the oldest pending VS Code decision (session v1) even with another session id
-    const stop = runHook('subagentstop.ts', { session_id: 'child-9', agent_id: 'a1', agent_type: 'default', stop_hook_active: false }, home)
+    // SubagentStop for VS Code finds its own session's launch (v1) among the pending ones
+    const stop = runHook('subagentstop.ts', { session_id: 'v1', agent_id: 'a1', agent_type: 'default', stop_hook_active: false }, home)
     assert.equal(stop.status, 0, stop.stderr)
+    // a stop from an unknown session cannot tell the two remaining VS Code launches (v2, v3) apart: unattributed, nothing consumed
+    const lost = runHook('subagentstop.ts', { session_id: 'child-9', agent_id: 'a2', agent_type: 'default', stop_hook_active: false }, home)
+    assert.equal(lost.status, 0, lost.stderr)
+    assert.equal(pendingNames(home).filter(name => name.startsWith('v2~') || name.startsWith('v3~')).length, 2)
     const stopCli = runHook('subagentstop.ts', { sessionId: 's1', agentType: 'general-purpose', stopReason: 'end_turn', response: 'done' }, home)
     assert.equal(stopCli.status, 0, stopCli.stderr)
     const decisions = readFileSync(join(home, 'decisions.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
     assert.ok(decisions.some(d => d.harness === 'copilot-cli' && d.mode === 'enforced'))
     assert.ok(decisions.some(d => d.harness === 'vscode-local' && d.mode === 'enforced' && d.model_name === 'GPT-5 mini (copilot)' && d.main_model === 'gpt-5-mini'))
     assert.ok(decisions.some(d => d.harness === 'vscode-local' && d.mode === 'suggested'))
+    assert.ok(decisions.some(d => d.mode === 'skipped' && /not attributed/.test(d.why)), 'the ambiguous stop is logged')
     assert.ok(decisions.every(d => !('description' in d)), 'decision rows must not persist raw task descriptions')
     const outcomes = readFileSync(join(home, 'outcomes.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
     assert.equal(outcomes.length, 2)

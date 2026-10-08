@@ -1,12 +1,12 @@
 """Execution records: what happened after a route, so the policy table can be tuned from evidence."""
 from __future__ import annotations
 import collections
-import hashlib
 import json
 import os
 import time
 
 from .catalog import estimate_cost_usd
+from .router import task_hash
 from .shapes import SHAPES
 
 FIELDS = ("shape", "profile", "model", "effort", "accepted")
@@ -17,7 +17,7 @@ def record(path, shape: str, profile: str, model: str, effort: str, accepted: bo
            seconds: float | None = None, models: dict | None = None) -> dict:
     if shape not in SHAPES or not isinstance(accepted, bool):
         raise ValueError("record needs a known shape and a boolean accepted")
-    row = {"ts": time.time(), "task_sha256": hashlib.sha256(task.encode()).hexdigest()[:16] if task else None,
+    row = {"ts": time.time(), "task_sha256": task_hash(task) if task else None,
            "shape": shape, "profile": profile, "model": model, "effort": effort, "accepted": accepted,
            "outcome": (outcome or "")[:100] or None, "input_tokens": input_tokens, "output_tokens": output_tokens,
            "seconds": seconds,
@@ -31,7 +31,7 @@ def record(path, shape: str, profile: str, model: str, effort: str, accepted: bo
 
 def append_decision(path, decision: dict, origin: str = "cli") -> dict:
     """Audit trail of routing decisions (what was suggested or enforced), separate from outcome records."""
-    row = {"ts": time.time(), "origin": origin, "task_sha256": hashlib.sha256(decision.get("task", "").encode()).hexdigest()[:16],
+    row = {"ts": time.time(), "origin": origin, "task_sha256": decision.get("task_sha256") or task_hash(decision.get("task", "")),
            "phase": decision.get("phase"), "shape": decision.get("shape"), "profile": decision.get("profile"),
            "model": decision.get("model"), "effort": decision.get("effort"), "answer_confidence": decision.get("answer_confidence"),
            "source": decision.get("source"), "warnings": decision.get("warnings", [])}
@@ -62,26 +62,33 @@ def load(path) -> list[dict]:
 def report(rows: list[dict], profiles: list[dict], min_samples: int = 10, min_acceptance: float = 0.85) -> dict:
     """Acceptance and cost per shape and profile, plus the cheapest profile that already holds up per shape."""
     by_key = collections.defaultdict(list)
+    unattributed = 0
     for row in rows:
+        if not row.get("profile"):
+            unattributed += 1  # suggest mode: no profile ran, so the outcome says nothing about any profile
+            continue
         by_key[(row["shape"], row["profile"])].append(row)
     cost_tier = {p["id"]: p["cost_tier"] for p in profiles}
     cells, suggestions = {}, {}
     for (shape, profile), items in sorted(by_key.items()):
-        accepted = sum(1 for r in items if r["accepted"])
+        # accepted is null when the harness could not tell (sub-agent stop); unknowns must not count as rejections.
+        known = [r["accepted"] for r in items if isinstance(r["accepted"], bool)]
         costs = [r["cost_usd"] for r in items if isinstance(r.get("cost_usd"), (int, float))]
         secs = [r["seconds"] for r in items if isinstance(r.get("seconds"), (int, float))]
         cells["%s/%s" % (shape, profile)] = {
-            "n": len(items), "acceptance": round(accepted / len(items), 3),
+            "n": len(items), "unknown": len(items) - len(known),
+            "acceptance": round(sum(known) / len(known), 3) if known else None,
             "mean_cost_usd": round(sum(costs) / len(costs), 4) if costs else None,
             "mean_seconds": round(sum(secs) / len(secs), 1) if secs else None,
             "cost_tier": cost_tier.get(profile)}
     for shape in SHAPES:
         holding = [(cost_tier.get(p, 99), p, c) for (s, p), items in by_key.items() if s == shape
-                   for c in [cells["%s/%s" % (s, p)]] if c["n"] >= min_samples and c["acceptance"] >= min_acceptance]
+                   for c in [cells["%s/%s" % (s, p)]]
+                   if c["n"] - c["unknown"] >= min_samples and c["acceptance"] is not None and c["acceptance"] >= min_acceptance]
         if holding:
             tier, profile, cell = min(holding)
             suggestions[shape] = {"cheapest_profile_holding_up": profile, "cost_tier": tier,
-                                  "acceptance": cell["acceptance"], "n": cell["n"]}
-    return {"rows": len(rows), "cells": cells, "suggestions": suggestions,
-            "rule": "cheapest profile per shape with n >= %d and acceptance >= %.2f; a human applies it to profiles.json"
+                                  "acceptance": cell["acceptance"], "n": cell["n"] - cell["unknown"]}
+    return {"rows": len(rows), "unattributed": unattributed, "cells": cells, "suggestions": suggestions,
+            "rule": "cheapest profile per shape with n >= %d known outcomes and acceptance >= %.2f; a human applies it to profiles.json"
                     % (min_samples, min_acceptance)}

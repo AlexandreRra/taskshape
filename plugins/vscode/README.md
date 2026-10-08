@@ -81,6 +81,9 @@ If discovery is missing or fails, routing uses the last good cached catalog when
 - Launches that already name a model are left unchanged by default.
 - Named custom agents are skipped by default because they may pin their own model in `.agent.md`.
 - `SubagentStop` exposes no stop reason; outcomes are recorded with `accepted: null`.
+- In `suggest` mode the outcome records `profile: null`, `model: inherited` and the proposed profile in `suggested_profile`, so reports do not credit a profile that never ran.
+- A `budget` name missing from the profile table skips routing: the launch keeps its original model and the error is logged in `decisions.jsonl`. Only `default` falls back to the widest ceiling when the table does not define it.
+- An outcome is attributed to a launch only when exactly one pending launch fits the stop. A stop from another session with several VS Code launches pending is logged as not attributed and consumes nothing; VS Code gives no id that ties a stop to its launch for certain. Pending launches older than 6 hours are discarded.
 - Suggest mode logs decisions without returning hook output.
 
 Hook behavior is tested against captured VS Code payloads and outputs, including installed folders with spaces and encoded characters and checks that prompts and descriptions stay out of audit files. A live Copilot routing session inside VS Code is still pending.

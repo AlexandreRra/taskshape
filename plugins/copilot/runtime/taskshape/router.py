@@ -1,6 +1,7 @@
 """Route a task: classify its shape (Laya or the rubric), then apply the policy table."""
 from __future__ import annotations
 from dataclasses import dataclass, field, asdict
+import hashlib
 import os
 import time
 
@@ -10,6 +11,11 @@ from .shapes import INSTRUCTIONS, SHAPES, shapes_for
 
 DEFAULT_HEAD_MAX_LEN = 320
 LOW_CONFIDENCE = 0.55
+
+
+def task_hash(task: str) -> str:
+    """Join key between a decision and its outcome: hash of the full task text, never of a truncated copy."""
+    return hashlib.sha256(task.encode()).hexdigest()[:16]
 
 
 def questions_for(phase: str, head_max_len: int = DEFAULT_HEAD_MAX_LEN) -> dict:
@@ -80,6 +86,7 @@ class Decision:
     warnings: list = field(default_factory=list)
     considered: list = field(default_factory=list)
     seconds: float = 0.0
+    task_sha256: str | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -125,6 +132,7 @@ def route(task: str, profiles: list[dict], phase: str = "work", max_cost_tier: i
                     shape_probabilities={k: round(float(v), 4) for k, v in answer["probabilities"].items()},
                     answer_confidence=round(float(answer["answer_confidence"]), 4),
                     entropy_confidence=round(float(answer["confidence"]), 4),
-                    profile=choice.profile["id"], model=choice.profile["model"], effort=choice.profile["effort"],
+                    profile=choice.profile["id"], model=choice.profile["model"], effort=choice.profile.get("effort", "default"),
                     reason=choice.reason, source=source, warnings=warnings, considered=choice.considered,
-                    seconds=round(time.monotonic() - started, 2))
+                    seconds=round(time.monotonic() - started, 2),
+                    task_sha256=task_hash(str(task)))
