@@ -11,8 +11,8 @@ transformers==5.18.0
 huggingface-hub==1.33.0
 safetensors==0.8.0
 numpy==2.5.3
-# PyTorch CPU wheels: broad Py3.12 CPU support on Linux/Windows x64/Linux arm64 via 2.11.0+cpu;
-# Windows arm64 needs 2.14.1+cpu; macOS arm64 uses PyPI's non-CUDA macOS wheel.
-torch==2.11.0+cpu ; sys_platform != "darwin" and (sys_platform != "win32" or platform_machine != "ARM64")
+# PyTorch CPU wheels: patched Py3.12 CPU support on Linux/Windows x64/Linux arm64 via 2.13.0+cpu;
+# Windows arm64 needs 2.14.1+cpu; macOS arm64 uses PyPI's non-CUDA macOS 14+ arm64 wheel.
+torch==2.13.0+cpu ; sys_platform != "darwin" and (sys_platform != "win32" or platform_machine != "ARM64")
 torch==2.14.1+cpu ; sys_platform == "win32" and platform_machine == "ARM64"
-torch==2.11.0 ; sys_platform == "darwin"
+torch==2.13.0 ; sys_platform == "darwin"

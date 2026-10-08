@@ -40,14 +40,17 @@ jobs:
         if: runner.os != 'Windows'
         env:
           TASKSHAPE_HOME: ${{ runner.temp }}/taskshape-fresh-runtime
+          TASKSHAPE_DEBUG_INSTALL: '1'
         run: sh plugins/vscode/hooks/launch.sh --install-node
       - name: Prepare bundled Node (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         env:
           TASKSHAPE_HOME: ${{ runner.temp }}/taskshape-fresh-runtime
+          TASKSHAPE_DEBUG_INSTALL: '1'
         run: '& ./plugins/vscode/hooks/launch.ps1 --install-node'
       - name: Install private Python and run offline Laya inference
         env:
           TASKSHAPE_HOME: ${{ runner.temp }}/taskshape-fresh-runtime
+          TASKSHAPE_DEBUG_INSTALL: '1'
         run: node --no-warnings --experimental-strip-types scripts/smoke-runtime.ts

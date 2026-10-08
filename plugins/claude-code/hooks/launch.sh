@@ -139,6 +139,11 @@ if [ "$script" = "--install-node" ]; then install_node; exit 0; fi
 
 node_bin=$(system_node || true)
 if [ -z "$node_bin" ]; then node_bin=$(bundled_node || true); fi
+if [ -z "$node_bin" ] && [ "${TASKSHAPE_REQUIRE_BUNDLED_NODE:-}" = 1 ]; then
+  install_node
+  node_bin=$(bundled_node || true)
+  [ -n "$node_bin" ] || { echo "Taskshape: private Node.js setup did not produce a runnable Node.js binary" >&2; exit 1; }
+fi
 if [ -n "$node_bin" ]; then
   if [ -z "$script" ]; then exit 0; fi
   exec "$node_bin" --no-warnings --experimental-strip-types "$script_dir/$script" "$@"

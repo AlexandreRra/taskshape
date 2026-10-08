@@ -93,7 +93,12 @@ export const downloadArtifact = async (artifact: Artifact, destination: string, 
 
 const run = (command: string, args: string[], env: NodeJS.ProcessEnv): void => {
   const result = spawnSync(command, args, { env, encoding: 'utf8', timeout: 20 * 60_000, windowsHide: true, maxBuffer: 4_000_000 })
-  if (result.status !== 0) throw new Error(`Local Laya setup failed at ${args[0]}. Check network access, free disk space and platform support; retry by starting a new session.`)
+  if (result.status !== 0) {
+    const detail = env.TASKSHAPE_DEBUG_INSTALL === '1'
+      ? ` Exit ${result.status ?? 'signal'} on ${process.platform}/${process.arch}. stdout: ${result.stdout.slice(-2_000)} stderr: ${result.stderr.slice(-2_000)}`
+      : ''
+    throw new Error(`Local Laya setup failed at ${args[0]}. Check network access, free disk space and platform support; retry by starting a new session.${detail}`)
+  }
 }
 
 export const installRuntime = async (): Promise<void> => {

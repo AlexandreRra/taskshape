@@ -608,6 +608,27 @@ test('plugin hook manifests invoke the Node bootstrap launchers', () => {
   }
 })
 
+test('Windows launchers preserve UTF-8 hook input through PowerShell 5 and 7', { skip: process.platform !== 'win32' }, () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'taskshape-powershell-'))
+  const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
+  try {
+    const hooks = installPluginFixture(tmp)
+    writeFileSync(join(hooks, 'echo.ts'), "let input = ''; for await (const chunk of process.stdin) input += chunk.toString(); process.stdout.write(input)")
+    const payload = { prompt: 'Olá, português e 日本語', description: 'Preserve Unicode', tool_name: 'runSubagent' }
+    for (const shell of ['powershell.exe', 'pwsh']) {
+      const result = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', join(hooks, 'launch.ps1'), 'echo.ts'], {
+        input: JSON.stringify(payload), encoding: 'utf8', timeout: 10_000,
+        env: { ...process.env, TASKSHAPE_HOME: home, TASKSHAPE_FORCE_BUNDLED_NODE: '', TASKSHAPE_REQUIRE_BUNDLED_NODE: '' },
+      })
+      assert.equal(result.status, 0, `${shell}: ${result.stderr}`)
+      assert.deepEqual(JSON.parse(result.stdout), payload, shell)
+    }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
 test('default Laya backend keeps the original model when runtime is unavailable', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'taskshape-laya-missing-'))
   const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))

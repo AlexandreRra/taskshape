@@ -9,10 +9,18 @@ $NodeRoot = Join-Path $TaskshapeHome 'node'
 $Assets = if ($env:TASKSHAPE_NODE_ASSETS) { $env:TASKSHAPE_NODE_ASSETS } else { Join-Path $PluginRoot 'runtime/node-assets.tsv' }
 $BaseUrl = if ($env:TASKSHAPE_NODE_BASE_URL) { $env:TASKSHAPE_NODE_BASE_URL } else { $null }
 $StatusFile = Join-Path $NodeRoot 'status.txt'
+$OutputEncoding = [Text.UTF8Encoding]::new($false)
+[Console]::InputEncoding = $OutputEncoding
+[Console]::OutputEncoding = $OutputEncoding
+$HookInput = ''
+if ($Script -ne '--install-node') {
+  $PipelineText = @($input) -join [Environment]::NewLine
+  $HookInput = if ($PipelineText.Length -gt 0) { $PipelineText } else { [Console]::In.ReadToEnd() }
+}
 
 function Test-Node([string]$Node) {
   if (-not $Node -or -not (Test-Path -LiteralPath $Node -PathType Leaf)) { return $false }
-  try { & $Node -e 'const [M,m]=process.versions.node.split(".").map(Number); process.exit(M>22||(M===22&&m>=6)?0:1)' *> $null }
+  try { & $Node -e 'const m=/^(\d+)\.(\d+)/.exec(process.versions.node);process.exit(+m[1]>22||(+m[1]===22&&+m[2]>=6)?0:1)' *> $null }
   catch { return $false }
   return $LASTEXITCODE -eq 0
 }
@@ -105,9 +113,19 @@ function Get-BundledNode {
 if ($Script -eq '--install-node') { Install-Node; exit 0 }
 $NodeBin = Get-SystemNode
 if (-not $NodeBin) { $NodeBin = Get-BundledNode }
+if (-not $NodeBin -and $env:TASKSHAPE_REQUIRE_BUNDLED_NODE -eq '1') {
+  Install-Node
+  $NodeBin = Get-BundledNode
+  if (-not $NodeBin) {
+    [Console]::Error.WriteLine('Taskshape: private Node.js setup did not produce a runnable Node.js binary')
+    exit 1
+  }
+}
 if ($NodeBin) {
   if (-not $Script) { exit 0 }
-  & $NodeBin --no-warnings --experimental-strip-types (Join-Path $ScriptDir $Script) @Rest
+  $HookArgs = @('--no-warnings', '--experimental-strip-types', (Join-Path $ScriptDir $Script)) + $Rest
+  if ($HookInput.Length -gt 0) { $HookInput | & $NodeBin @HookArgs }
+  else { & $NodeBin @HookArgs }
   exit $LASTEXITCODE
 }
 if ((Test-Path $StatusFile) -and ((Get-Content $StatusFile -Raw) -match '^error:')) {
