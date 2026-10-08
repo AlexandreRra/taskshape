@@ -26,6 +26,27 @@ DEFAULT_CATALOG = _default_data("models.json")
 DEFAULT_PROFILES = _default_data("profiles.example.json")
 
 
+def _read_stdin() -> str:
+    """Read stdin as UTF-8 whatever the locale: a cp1252 console would otherwise garble or reject accents."""
+    stream = getattr(sys.stdin, "buffer", None)
+    return stream.read().decode("utf-8") if stream is not None else sys.stdin.read()
+
+
+def _write(text: str, stream) -> None:
+    """Write UTF-8 bytes whatever the console encoding: a cp1252 stdout would raise on accents or Cyrillic."""
+    buffer = getattr(stream, "buffer", None)
+    if buffer is None:
+        stream.write(text)
+        return
+    stream.flush()
+    buffer.write(text.encode("utf-8"))
+    buffer.flush()
+
+
+def _read_json(path):
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
 def _profiles(args):
     models = load_models(args.catalog) if args.catalog else None
     value = load_profiles(args.profiles, models)
@@ -33,7 +54,7 @@ def _profiles(args):
 
 
 def cmd_route(args):
-    task = sys.stdin.read() if args.task_stdin else args.task
+    task = _read_stdin() if args.task_stdin else args.task
     value, _ = _profiles(args)
     budget = value["budgets"].get(args.budget)
     if budget is None:
@@ -89,12 +110,12 @@ def cmd_lab(args):
         return labmod.finetune(args.base, args.train, args.out, args.device, args.epochs, args.micro_batch, args.grad_accum,
                                args.train_top_layers, args.calib_fraction, args.seed)
     if args.lab_action == "compare":
-        result = labmod.compare(json.loads(Path(args.baseline).read_text()), json.loads(Path(args.candidate).read_text()))
+        result = labmod.compare(_read_json(args.baseline), _read_json(args.candidate))
         if args.markdown:
-            Path(args.markdown).write_text(labmod.markdown_comparison(result) + "\n")
+            Path(args.markdown).write_text(labmod.markdown_comparison(result) + "\n", encoding="utf-8")
         return result
-    return labmod.adopt(args.config, args.checkpoint, json.loads(Path(args.baseline).read_text()),
-                        json.loads(Path(args.candidate).read_text()), json.loads(Path(args.meta).read_text()))
+    return labmod.adopt(args.config, args.checkpoint, _read_json(args.baseline),
+                        _read_json(args.candidate), _read_json(args.meta))
 
 
 def build_parser():

@@ -98,7 +98,7 @@ def build_dataset(briefs_path, out, seed: int = 20261005, heldout_fraction: floa
         meta["files"][name] = {"path": str(path), "sha256": sha256_file(path), "rows": len(subset),
                                "shapes": dict(collections.Counter(row["expected"]["shape"] for row in subset)),
                                "labelled_by": dict(collections.Counter(row["labelled_by"] for row in subset))}
-    (out / "meta.json").write_text(json.dumps(meta, indent=2))
+    (out / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     return meta
 
 
@@ -178,7 +178,7 @@ def evaluate(checkpoint, datasets, out, device: str = "auto", head_max_len: int 
             report["splits"][Path(dataset).stem] = {"dataset": str(dataset), "dataset_sha256": sha256_file(dataset), "rows": len(rows),
                                                     "seconds": round(time.monotonic() - started, 2), "metrics": metrics_for(results),
                                                     "results": results}
-    Path(out).write_text(json.dumps(report, indent=1))
+    Path(out).write_text(json.dumps(report, indent=1), encoding="utf-8")
     return report
 
 
@@ -190,7 +190,7 @@ def check_budget(checkpoint, head_max_len: int = DEFAULT_HEAD_MAX_LEN) -> dict:
     checkpoint = resolve_checkpoint(checkpoint)
     _fix_tokenizer_config(str(checkpoint))
     tokenizer = AutoTokenizer.from_pretrained(str(checkpoint / "tokenizer"))
-    cfg = json.loads((checkpoint / "rl_agent_config.json").read_text())
+    cfg = json.loads((checkpoint / "rl_agent_config.json").read_text(encoding="utf-8"))
     report = {"head_max_len": head_max_len, "max_len": cfg.get("max_len", 1024), "criteria": {}, "questions": {}}
     for name, shape in SHAPES.items():
         count = len(tokenizer(" %s: %s" % (name, shape["criteria"]), add_special_tokens=False)["input_ids"])
@@ -306,7 +306,7 @@ def finetune(base, train_path, out_dir, device: str = "auto", epochs: int = 4, m
     out_dir.mkdir(parents=True, exist_ok=True)
     random.seed(seed)
     torch.manual_seed(seed)
-    cfg = json.loads((base / "rl_agent_config.json").read_text())
+    cfg = json.loads((base / "rl_agent_config.json").read_text(encoding="utf-8"))
     base_cfg = dict(cfg)
     cfg.update({"max_len": 1024, "head_max_len": head_max_len, "max_tokens_per_batch": 2048, "gradient_checkpointing": True})
     _fix_tokenizer_config(str(base))
@@ -398,11 +398,11 @@ def finetune(base, train_path, out_dir, device: str = "auto", epochs: int = 4, m
     save_file({n: v.detach().half().cpu().contiguous() for n, v in model.state_dict().items()}, str(out_dir / "model.safetensors"))
     model.encoder.config.save_pretrained(str(out_dir / "encoder"))
     tokenizer.save_pretrained(str(out_dir / "tokenizer"))
-    (out_dir / "rl_agent_config.json").write_text(json.dumps(cfg, indent=2))
+    (out_dir / "rl_agent_config.json").write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     log.update({"finished_at": time.time(), "seconds": round(time.time() - log["started_at"], 1), "choice_temperature": choice_temperature,
                 "bucket_temperatures": bucket_temperatures, "output_sha256": sha256_file(out_dir / "model.safetensors"),
                 "peak_memory_bytes": torch.cuda.max_memory_allocated() if target_device.type == "cuda" else None})
-    (out_dir / "training-log.json").write_text(json.dumps(log, indent=2))
+    (out_dir / "training-log.json").write_text(json.dumps(log, indent=2), encoding="utf-8")
     return log
 
 
@@ -448,7 +448,7 @@ def load_config(path) -> dict:
     path = Path(path)
     if not path.exists():
         return {"version": 1, "checkpoint": None, "revision": None, "head_max_len": DEFAULT_HEAD_MAX_LEN}
-    value = json.loads(path.read_text())
+    value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict) or value.get("version") != 1:
         raise ValueError("Invalid taskshape config: %s" % path)
     return value
@@ -467,7 +467,7 @@ def adopt(config_path, checkpoint, baseline: dict, candidate: dict, meta: dict) 
     digest = sha256_file(checkpoint / "model.safetensors")
     if candidate.get("checkpoint_sha256") != digest:
         raise ValueError("Candidate report was not produced by this checkpoint")
-    cfg = json.loads((checkpoint / "rl_agent_config.json").read_text())
+    cfg = json.loads((checkpoint / "rl_agent_config.json").read_text(encoding="utf-8"))
     provenance = cfg.get("taskshape", {})
     train_sha = meta.get("files", {}).get("train", {}).get("sha256")
     if not train_sha or provenance.get("train_sha256") != train_sha:
@@ -482,5 +482,5 @@ def adopt(config_path, checkpoint, baseline: dict, candidate: dict, meta: dict) 
             raise ValueError("Baseline report was not produced by the currently configured checkpoint")
     updated = {**current, "version": 1, "checkpoint": str(checkpoint), "revision": "sha256:" + digest,
                "head_max_len": current.get("head_max_len", DEFAULT_HEAD_MAX_LEN), "adopted_at": time.time()}
-    Path(config_path).write_text(json.dumps(updated, indent=2))
+    Path(config_path).write_text(json.dumps(updated, indent=2), encoding="utf-8")
     return {"previous": current, "current": updated, "comparison": result}

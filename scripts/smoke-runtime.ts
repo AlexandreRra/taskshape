@@ -30,6 +30,7 @@ globalThis.fetch = async () => { throw new Error('Network use after setup') }
 for (const task of [
   'Find the source filename containing the exact configuration key.',
   'Corrija a vulnerabilidade que permite acessar os dados privados de outro usuário.',
+  'Área de login: corrigir Índice', // accented capitals must survive the stdin round trip to Python
 ]) {
   const started = performance.now()
   const answer = await classifyLocal(task)

@@ -34,6 +34,8 @@ const lockOwnerAlive = (): boolean => {
   }
 }
 
+const pythonArgs = (checkpoint: string): string[] => ['-X', 'utf8', '-I', join(bundledRuntime(), 'classify.py'), checkpoint]
+
 const status = (): RuntimeStatus | undefined => {
   try { return JSON.parse(readFileSync(statusPath(), 'utf8')) as RuntimeStatus } catch { return undefined }
 }
@@ -144,7 +146,7 @@ export const installRuntime = async (): Promise<void> => {
       await downloadArtifact(modelFile, join(modelRoot, modelFile.path))
     }
     saveStatus({ state: 'installing', message: 'Taskshape: checking local Laya inference.' })
-    const check = spawnSync(python, ['-I', join(bundledRuntime(), 'classify.py'), checkpoint], {
+    const check = spawnSync(python, pythonArgs(checkpoint), {
       env: { ...env, HF_HUB_OFFLINE: '1', TRANSFORMERS_OFFLINE: '1', HF_HUB_DISABLE_TELEMETRY: '1' },
       input: JSON.stringify({ task: 'Find the filename that contains the exact setting name.', phase: 'work' }), encoding: 'utf8', timeout: 60_000, windowsHide: true,
     })
@@ -171,7 +173,7 @@ export const validateClassification = (raw: unknown, phase: Phase = 'work'): Cla
 export const classifyLocal = async (task: string, phase: Phase = 'work'): Promise<Classification> => {
   const local = await ensureRuntime()
   if (local.state !== 'ready' || !local.python || !local.checkpoint) throw new Error(local.message)
-  const result = spawnSync(local.python, ['-I', join(bundledRuntime(), 'classify.py'), local.checkpoint], {
+  const result = spawnSync(local.python, pythonArgs(local.checkpoint), {
     input: JSON.stringify({ task, phase }), encoding: 'utf8', timeout: 20_000, windowsHide: true, maxBuffer: 1_000_000,
     env: { ...process.env, HF_HUB_OFFLINE: '1', TRANSFORMERS_OFFLINE: '1', HF_HUB_DISABLE_TELEMETRY: '1', TOKENIZERS_PARALLELISM: 'false' },
   })

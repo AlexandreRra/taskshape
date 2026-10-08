@@ -20,7 +20,8 @@ from taskshape.router import LayaBackend, questions_for, state_for, validate_ans
 
 
 def main():
-    request = json.load(sys.stdin)
+    # The caller always sends UTF-8; do not depend on the process locale (cp1252 on Windows). Output is ASCII-escaped JSON.
+    request = json.loads(sys.stdin.buffer.read().decode("utf-8"))
     task, phase = request.get("task"), request.get("phase", "work")
     if not isinstance(task, str) or phase not in ("work", "review"):
         raise ValueError("Invalid classification input")
