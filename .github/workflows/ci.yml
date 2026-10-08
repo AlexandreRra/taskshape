@@ -32,4 +32,6 @@ jobs:
       - name: Test Python core
         run: python -m unittest discover -s tests
       - name: Test shared and installed plugin hooks
-        run: node --experimental-strip-types --test plugins/shared/harness.test.ts plugins/copilot/hooks/harness.test.ts plugins/vscode/hooks/harness.test.ts plugins/shared/runtime.test.ts
+        run: node --experimental-strip-types --test plugins/shared/harness.test.ts plugins/copilot/hooks/harness.test.ts plugins/vscode/hooks/harness.test.ts plugins/shared/runtime.test.ts plugins/shared/policy.test.ts plugins/shared/rubric.test.ts
+      - name: Test Claude Code plugin hooks
+        run: node --no-warnings --experimental-strip-types --import ./plugins/claude-code/test-support/register.mjs --test plugins/claude-code/hooks/register.test.ts plugins/claude-code/hooks/rubric.test.ts

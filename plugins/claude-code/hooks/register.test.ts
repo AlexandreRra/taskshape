@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { aliasFor } from './register'
+import { aliasFor } from './register.ts'
 
 type Written = { path: string; text: string }
 

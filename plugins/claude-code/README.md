@@ -97,4 +97,12 @@ claude plugin validate plugins/claude-code
 claude plugin test plugins/claude-code
 ```
 
+Without the `claude` CLI (CI, Node 22.6+), a local shim of `claude-code/testing` runs the same files:
+
+```bash
+node --no-warnings --experimental-strip-types --import ./plugins/claude-code/test-support/register.mjs --test plugins/claude-code/hooks/register.test.ts plugins/claude-code/hooks/rubric.test.ts
+```
+
+The shim (`plugins/claude-code/test-support/`) reimplements only the subset these tests use: `describe`, `test` with `options`, `expect` and a `$` over the plugin's real `register()`. `claude plugin test` remains the reference runner.
+
 The TypeScript hook tests cover routing behavior and audit-field exclusions for task prompts and descriptions.
