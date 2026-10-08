@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { classifyLocal, downloadArtifact, ensureRuntime, runtimeDir, selectContextLocal, shouldReadFileLocal, validateClassification, validateContextSelection, validateFileRelevance } from './runtime.ts'
+import { classifyLocal, downloadArtifact, ensureRuntime, lockOwnerAlive, markRuntimeUsed, pruneOtherRuntimes, runtimeDir, selectContextLocal, shouldReadFileLocal, validateClassification, validateContextSelection, validateFileRelevance } from './runtime.ts'
 
 const here = import.meta.dirname
 
@@ -341,6 +341,75 @@ cat > "$TASKSHAPE_STDIN_CAPTURE"
   }
 })
 
+test('an install lock expires by age even when its PID is alive, and bare legacy PIDs age from the lock directory', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'taskshape-lock-'))
+  const hours = (count: number): number => count * 60 * 60_000
+  try {
+    await withEnv({ TASKSHAPE_HOME: home }, () => {
+      const lock = join(runtimeDir(), 'install.lock')
+      mkdirSync(lock, { recursive: true })
+      const ownedBy = (text: string): void => writeFileSync(join(lock, 'pid'), text)
+      ownedBy(`${process.pid} ${Date.now()}`)
+      assert.equal(lockOwnerAlive(), true)
+      ownedBy(`${process.pid} ${Date.now() - hours(1)}`)
+      assert.equal(lockOwnerAlive(), true)
+      ownedBy(`${process.pid} ${Date.now() - hours(3)}`)
+      assert.equal(lockOwnerAlive(), false)
+      ownedBy(`${process.pid} not-a-time`)
+      assert.equal(lockOwnerAlive(), false)
+      ownedBy(String(process.pid))
+      assert.equal(lockOwnerAlive(), true)
+      const old = new Date(Date.now() - hours(3))
+      utimesSync(lock, old, old)
+      assert.equal(lockOwnerAlive(), false)
+      ownedBy('0 0')
+      assert.equal(lockOwnerAlive(), false)
+    })
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('pruning removes only old versioned runtimes that are not the current one, locked or outside the runtimes directory', () => {
+  const home = mkdtempSync(join(tmpdir(), 'taskshape-prune-'))
+  const days = (count: number): Date => new Date(Date.now() - count * 24 * 60 * 60_000)
+  const runtimes = join(home, 'runtime')
+  const make = (name: string, age: number): string => {
+    const dir = join(runtimes, name)
+    mkdirSync(join(dir, 'venv'), { recursive: true })
+    writeFileSync(join(dir, 'status.json'), '{}')
+    utimesSync(dir, days(age), days(age))
+    return dir
+  }
+  try {
+    const current = make('0123456789abcdef', 30)
+    const stale = make('aaaaaaaaaaaaaaaa', 8)
+    const recent = make('bbbbbbbbbbbbbbbb', 1)
+    const locked = make('cccccccccccccccc', 8)
+    mkdirSync(join(locked, 'install.lock'))
+    writeFileSync(join(locked, 'install.lock', 'pid'), `${process.pid} ${Date.now()}`)
+    utimesSync(locked, days(8), days(8))
+    const notHash = make('notes', 30)
+    const upper = make('AAAAAAAAAAAAAAAA', 30)
+    writeFileSync(join(runtimes, 'dddddddddddddddd'), 'file')
+    utimesSync(join(runtimes, 'dddddddddddddddd'), days(30), days(30))
+    const outside = join(home, 'outside')
+    mkdirSync(outside)
+    writeFileSync(join(outside, 'keep.txt'), 'keep')
+    if (POSIX) symlinkSync(outside, join(runtimes, 'eeeeeeeeeeeeeeee'))
+
+    pruneOtherRuntimes(current)
+
+    assert.equal(existsSync(stale), false)
+    for (const kept of [current, recent, locked, notHash, upper, join(runtimes, 'dddddddddddddddd'), join(outside, 'keep.txt')]) {
+      assert.equal(existsSync(kept), true, kept)
+    }
+    pruneOtherRuntimes(join(home, 'missing', '0123456789abcdef'))
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
 test('context selection forwards only known fixed warnings and counts the rest', () => {
   const known = 'file exceeds the local read limit; reading is recommended'
   const answer = {
@@ -358,4 +427,61 @@ test('context selection forwards only known fixed warnings and counts the rest',
     'chunk budget reached before complete coverage; the whole file is recommended', 'Local context selection returned 1 other warning(s)'])
   const text = JSON.stringify(result)
   for (const secret of ['secret-project', 'second line', 'private words']) assert.equal(text.includes(secret), false, secret)
+})
+
+test('a ready runtime records its use once a day and pruning follows last use, not install time', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'taskshape-last-used-'))
+  const days = (count: number): Date => new Date(Date.now() - count * 24 * 60 * 60_000)
+  const runtimes = join(home, 'runtime')
+  const make = (name: string, installedDaysAgo: number, usedDaysAgo?: number): string => {
+    const dir = join(runtimes, name)
+    mkdirSync(dir, { recursive: true })
+    if (usedDaysAgo !== undefined) {
+      writeFileSync(join(dir, 'last-used'), '')
+      utimesSync(join(dir, 'last-used'), days(usedDaysAgo), days(usedDaysAgo))
+    }
+    utimesSync(dir, days(installedDaysAgo), days(installedDaysAgo))
+    return dir
+  }
+  try {
+    const current = make('0123456789abcdef', 30)
+    const usedRecently = make('aaaaaaaaaaaaaaaa', 30, 1)
+    const usedLongAgo = make('bbbbbbbbbbbbbbbb', 30, 9)
+    const neverMarkedOld = make('cccccccccccccccc', 30)
+    const neverMarkedNew = make('dddddddddddddddd', 2)
+
+    pruneOtherRuntimes(current)
+
+    assert.equal(existsSync(usedRecently), true)
+    assert.equal(existsSync(usedLongAgo), false)
+    assert.equal(existsSync(neverMarkedOld), false)
+    assert.equal(existsSync(neverMarkedNew), true)
+
+    markRuntimeUsed(current)
+    const marker = join(current, 'last-used')
+    assert.ok(Date.now() - statSync(marker).mtimeMs < 60_000)
+    const earlier = new Date(Date.now() - 60 * 60_000)
+    utimesSync(marker, earlier, earlier)
+    markRuntimeUsed(current)
+    assert.equal(Math.round(statSync(marker).mtimeMs), Math.round(earlier.getTime()), 'a marker newer than a day is left alone')
+    utimesSync(marker, days(2), days(2))
+    markRuntimeUsed(current)
+    assert.ok(Date.now() - statSync(marker).mtimeMs < 60_000, 'an older marker is refreshed')
+    markRuntimeUsed(join(home, 'missing', 'runtime'))
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('ensureRuntime marks a ready runtime as used', { skip: !POSIX }, async () => {
+  const home = mkdtempSync(join(tmpdir(), 'taskshape-ready-mark-'))
+  try {
+    installReadyRuntime(home, '#!/bin/sh\n')
+    await withEnv({ TASKSHAPE_HOME: home }, async () => {
+      assert.equal((await ensureRuntime()).state, 'ready')
+      assert.equal(existsSync(join(runtimeDir(), 'last-used')), true)
+    })
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
 })

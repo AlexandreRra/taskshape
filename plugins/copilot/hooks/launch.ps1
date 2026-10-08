@@ -83,6 +83,7 @@ function Install-Node {
       if ($BaseUrl -notlike 'https://nodejs.org/*' -and $BaseUrl -notlike 'file://*') { Fail-Install 'untrusted Node.js download URL'; return }
       $Url = $BaseUrl.TrimEnd('/') + '/' + $Asset.filename
     } else { $Url = 'https://nodejs.org/dist/v' + $Asset.version + '/' + $Asset.filename }
+    $ProgressPreference = 'SilentlyContinue'
     Invoke-WebRequest -Uri $Url -OutFile $Archive -UseBasicParsing
     $Hash = (Get-FileHash -Algorithm SHA256 $Archive).Hash.ToLowerInvariant()
     if ($Hash -ne $Asset.sha256) { Fail-Install 'Node.js checksum mismatch'; return }

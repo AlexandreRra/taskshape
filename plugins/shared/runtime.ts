@@ -1,7 +1,7 @@
 // Provisioned locally on first use. Classification never sends task text over the network.
 import { createHash, randomUUID } from 'node:crypto'
-import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -56,6 +56,16 @@ const CONTEXT_SELECTION_DEFAULTS = {
 } as const
 const CONTEXT_MAX_PATHS = 20
 const CONTEXT_PROCESS_OVERHEAD_S = 20
+// An install that has run this long is treated as dead even if its PID answers: the PID may belong to an unrelated
+// process now. Two hours covers the slowest legitimate setup (about 650 MB of model plus Python and CPU wheels over a poor link).
+const INSTALL_LOCK_MAX_AGE_MS = 2 * 60 * 60_000
+// Runtimes of other payload hashes are removed only when unused for this long, so a second plugin on an
+// older payload is never deleted from under it while it keeps being used.
+const STALE_RUNTIME_MIN_AGE_MS = 7 * 24 * 60 * 60_000
+// A ready runtime records its use in this marker file at most once per interval, so hooks do not write on every call.
+const LAST_USED_FILE = 'last-used'
+const LAST_USED_INTERVAL_MS = 24 * 60 * 60_000
+const RUNTIME_HASH = /^[a-f0-9]{16}$/
 
 const here = dirname(fileURLToPath(import.meta.url))
 export const bundledRuntime = (): string => [join(here, '..', 'runtime'), join(here, '..', '..', 'runtime')]
@@ -64,17 +74,53 @@ const payload = (): string => createHash('sha256').update(readFileSync(join(bund
   .update(readFileSync(join(bundledRuntime(), 'requirements.lock'))).digest('hex').slice(0, 16)
 export const runtimeDir = (): string => join(process.env.TASKSHAPE_HOME || join(homedir(), '.taskshape'), 'runtime', payload())
 const statusPath = (): string => join(runtimeDir(), 'status.json')
-const lockOwnerAlive = (): boolean => {
-  const lock = join(runtimeDir(), 'install.lock')
+// The owner file holds "<pid> <start time in ms>"; a bare PID (older installers) ages from the lock directory.
+export const lockOwnerAlive = (dir: string = runtimeDir()): boolean => {
+  const lock = join(dir, 'install.lock')
   try {
-    const pid = Number(readFileSync(join(lock, 'pid'), 'utf8'))
+    const [pidText, startedText] = readFileSync(join(lock, 'pid'), 'utf8').trim().split(/\s+/)
+    const pid = Number(pidText)
     if (!Number.isInteger(pid) || pid < 1) return false
+    const started = startedText === undefined ? statSync(lock).mtimeMs : Number(startedText)
+    if (!Number.isFinite(started) || Date.now() - started > INSTALL_LOCK_MAX_AGE_MS) return false
     process.kill(pid, 0)
     return true
   } catch {
     // Allow the installer a moment to write its PID after acquiring the lock.
     try { return Date.now() - statSync(lock).mtimeMs < 5_000 } catch { return false }
   }
+}
+
+// Best effort: a failed write only makes this runtime look older to the pruner.
+export const markRuntimeUsed = (dir: string = runtimeDir()): void => {
+  const marker = join(dir, LAST_USED_FILE)
+  try {
+    if (Date.now() - statSync(marker).mtimeMs < LAST_USED_INTERVAL_MS) return
+    const now = new Date()
+    utimesSync(marker, now, now)
+  } catch {
+    try { writeFileSync(marker, '', { mode: 0o600 }) } catch { /* read-only or racing runtime directory */ }
+  }
+}
+
+// Last use is the marker's mtime; runtimes that never wrote one fall back to the directory's mtime (their last install).
+const runtimeLastUsed = (dir: string): number => {
+  try { return statSync(join(dir, LAST_USED_FILE)).mtimeMs } catch { return statSync(dir).mtimeMs }
+}
+
+// Best effort: stale runtimes only cost disk, so no failure here may affect an install that already succeeded.
+export const pruneOtherRuntimes = (keep: string = runtimeDir(), minAgeMs: number = STALE_RUNTIME_MIN_AGE_MS): void => {
+  try {
+    const parent = dirname(keep)
+    for (const entry of readdirSync(parent, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !RUNTIME_HASH.test(entry.name) || entry.name === basename(keep)) continue
+      const dir = join(parent, entry.name)
+      try {
+        if (Date.now() - runtimeLastUsed(dir) < minAgeMs || lockOwnerAlive(dir)) continue
+        rmSync(dir, { recursive: true, force: true })
+      } catch { /* leave it for the next install */ }
+    }
+  } catch { /* no runtimes directory to prune */ }
 }
 
 const pythonArgs = (checkpoint: string): string[] => ['-X', 'utf8', '-I', join(bundledRuntime(), 'classify.py'), checkpoint]
@@ -93,7 +139,10 @@ const saveStatus = (value: RuntimeStatus): RuntimeStatus => {
 export const ensureRuntime = async (): Promise<RuntimeStatus> => {
   const current = status()
   if (current?.state === 'ready' && current.python && current.checkpoint
-    && existsSync(current.python) && existsSync(join(current.checkpoint, 'rl_agent_config.json'))) return current
+    && existsSync(current.python) && existsSync(join(current.checkpoint, 'rl_agent_config.json'))) {
+    markRuntimeUsed()
+    return current
+  }
   if (current?.state === 'installing' && (lockOwnerAlive() || Date.now() - (current.updated ?? 0) < 5_000)) return current
   if (current?.state === 'error' && Date.now() - (current.updated ?? 0) < 60_000) return current
   const pending = saveStatus({ state: 'installing', message: 'Taskshape is preparing local Laya. Python, dependencies and the model are downloaded once; routing starts when setup finishes.' })
@@ -158,7 +207,7 @@ export const installRuntime = async (): Promise<void> => {
     rmSync(lock, { recursive: true, force: true })
     try { mkdirSync(lock, { mode: 0o700 }) } catch { return }
   }
-  writeFileSync(join(lock, 'pid'), String(process.pid), { mode: 0o600 })
+  writeFileSync(join(lock, 'pid'), `${process.pid} ${Date.now()}`, { mode: 0o600 })
   try {
     const assets = JSON.parse(readFileSync(join(bundledRuntime(), 'assets.json'), 'utf8')) as Assets
     const platform = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : process.platform
@@ -196,6 +245,7 @@ export const installRuntime = async (): Promise<void> => {
     if (check.status !== 0) throw new Error('Laya was downloaded but its local inference check failed.')
     validateClassification(JSON.parse(check.stdout), 'work')
     saveStatus({ state: 'ready', message: 'Taskshape: local Laya is ready.', python, checkpoint })
+    pruneOtherRuntimes(root)
   } catch (error) {
     saveStatus({ state: 'error', message: error instanceof Error ? error.message : 'Local Laya setup failed.' })
   } finally { rmSync(lock, { recursive: true, force: true }) }
