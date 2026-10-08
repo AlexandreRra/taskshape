@@ -181,10 +181,6 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(len(state["context"]["repo"]), 200)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class CliTests(unittest.TestCase):
     def test_route_allowed_restricts_the_choice_and_rejects_unknown_ids(self):
         import contextlib
@@ -218,3 +214,7 @@ class CliTests(unittest.TestCase):
             sys.stdin = old_stdin
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out.getvalue())["shape"], "routine")
+
+
+if __name__ == "__main__":
+    unittest.main()
