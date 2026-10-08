@@ -67,6 +67,12 @@
       "title": "Respect explicit model",
       "description": "When the launch already names a model, leave it alone even in enforce mode.",
       "default": true
+    },
+    "routeNamedAgents": {
+      "type": "boolean",
+      "title": "Route named agents",
+      "description": "Also route launches of a named subagent (anything but general-purpose and fork), which may pin its own model. Off: such launches keep their model.",
+      "default": false
     }
   }
 }

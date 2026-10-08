@@ -147,12 +147,17 @@ export const register: Register = (on, options) => {
   const recordsOption = String(options.records || '')
   const enforce = options.mode !== 'suggest' // routing is on unless the user asks to only observe
   const respectExplicit = options.respectExplicitModel !== false
+  const routeNamedAgents = options.routeNamedAgents === true // a named agent may pin its own model, which routing would override
   loadedProfiles = undefined
   dataFolder = undefined
 
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
     const name = $.plugin.name
     if (e.subagent_type === 'fork') return next(e) // forks always inherit the parent model
+    if (!routeNamedAgents && e.subagent_type && e.subagent_type !== 'general-purpose') {
+      $.ui.status(`${name}: named agent ${e.subagent_type} keeps its own model (routeNamedAgents is off)`)
+      return next(e)
+    }
     if (respectExplicit && e.model) {
       $.ui.status(`${name}: explicit model ${e.model} kept`)
       return next(e)

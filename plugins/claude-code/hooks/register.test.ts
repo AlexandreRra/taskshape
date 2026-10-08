@@ -221,6 +221,27 @@ describe('zero configuration', () => {
   })
 })
 
+describe('named agents', () => {
+  const architect = { ...coupled, subagent_type: 'oh-my-claudecode:architect' }
+  const launch = async ($: any, on: any) => {
+    const seen: unknown[] = []
+    wire(on, {}, [])
+    on('tool.call', { tool: 'Agent' }, (_: unknown, e: { subagent_type?: string; model?: string }) => { seen.push([e.subagent_type, e.model]); return { result: 'done', text: 'done' } })
+    await $.tool.call(architect)
+    await $.tool.call({ ...coupled, subagent_type: 'general-purpose' })
+    await $.tool.call(coupled)
+    return seen
+  }
+
+  test('a named agent keeps its own model; general-purpose and untyped launches are routed', { options: { mode: 'enforce', backend: 'heuristic' } }, async ($, on) => {
+    expect(await launch($, on)).toEqual([['oh-my-claudecode:architect', undefined], ['general-purpose', 'opus'], [undefined, 'opus']])
+  })
+
+  test('routeNamedAgents routes a named agent too', { options: { mode: 'enforce', backend: 'heuristic', routeNamedAgents: true } }, async ($, on) => {
+    expect(await launch($, on)).toEqual([['oh-my-claudecode:architect', 'opus'], ['general-purpose', 'opus'], [undefined, 'opus']])
+  })
+})
+
 describe('profiles file', () => {
   test('a valid profiles.json replaces the built-in table', { options: { mode: 'enforce', backend: 'heuristic', profiles: '/etc/p.json' } }, async ($, on) => {
     const files: Record<string, string> = { '/etc/p.json': JSON.stringify({ version: 1, profiles: [
