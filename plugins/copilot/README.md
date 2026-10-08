@@ -27,6 +27,9 @@ to pick a budget, edit that file (shared with the VS Code plugin; it is never ov
 { "mode": "suggest", "budget": "standard" }
 ```
 
+Decision and outcome entries contain routing metadata; task prompts and descriptions are excluded from
+those fields. Logs from earlier versions may still contain task descriptions.
+
 Environment variables override the file: `TASKSHAPE_MODE`, `TASKSHAPE_BUDGET`, `TASKSHAPE_PROFILES`,
 `TASKSHAPE_COMMAND` (path to the Python `taskshape` CLI, for Laya), `TASKSHAPE_CONFIG`,
 `TASKSHAPE_RESPECT_EXPLICIT_MODEL`. Hooks: `sessionStart` (the CLI runs it on the session's first prompt; it

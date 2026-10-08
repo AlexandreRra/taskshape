@@ -1,17 +1,18 @@
 // Run: node --experimental-strip-types --test plugins/copilot/hooks/harness.test.ts   (or plugins/vscode/hooks/harness.test.ts)
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import {
   CATALOG_RETRY, CATALOG_TTL, DEFAULT_CONFIG, type Decide, applyCatalog, catalogFresh, detectHarness, ensureConfig, loadProfilesFrom,
   localCandidates, multiplierCeiling, outcomeFor, parseAcpModels, parseConfig, popPending, routeEmbedded, vscodeModelName, writeJson,
 } from './harness.ts'
 import { discoverModels } from './discover.ts'
 
-const here = dirname(new URL(import.meta.url).pathname)
+const here = dirname(fileURLToPath(import.meta.url))
 const profilesPath = [join(here, '..', 'profiles.copilot.json'), join(here, 'profiles.copilot.json')].find(p => existsSync(p)) as string
 const table = loadProfilesFrom(readFileSync(profilesPath, 'utf8'))
 const decide: Decide = (prompt, candidates) => routeEmbedded(prompt, 'work', table, 'default', candidates)
@@ -26,6 +27,8 @@ const sub = (prompt: string, extra: Record<string, unknown> = {}) => ({
 const COUPLED = 'Own ledger.py and tests; the migration must be idempotent'
 const VISUAL = 'Review the screenshot against the mockup and list visual defects'
 const TYPO = 'Fix the typo in README and bump the version'
+const SECRET_PROMPT = 'SENSITIVE_PROMPT_do_not_log_7fd45e98 owns payments.ts and tests; migration must be idempotent'
+const SECRET_DESCRIPTION = 'SENSITIVE_DESCRIPTION_do_not_log_d4c5b6a7'
 const POSIX = process.platform !== 'win32'
 
 // The ACP `session/new` model list exactly as Copilot CLI 1.0.92 shapes it (auto twice, usage as "0.33x", enablement).
@@ -219,6 +222,59 @@ test('VS Code: enforce answers with hookSpecificOutput.updatedInput and the disp
   if (suggested.kind === 'suggest') assert.ok(suggested.decision.model_name?.endsWith(' (copilot)'))
 })
 
+test('persistent audit files omit raw prompt and description for both harnesses and modes', () => {
+  const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
+  try {
+    const cases = [
+      { label: 'copilot-enforce', session: 'c-enforce', mode: 'enforce', payload: task(`${SECRET_PROMPT} copilot enforce`, { description: `${SECRET_DESCRIPTION} copilot enforce` }) },
+      { label: 'copilot-suggest', session: 'c-suggest', mode: 'suggest', payload: task(`${SECRET_PROMPT} copilot suggest`, { description: `${SECRET_DESCRIPTION} copilot suggest` }) },
+      { label: 'vscode-enforce', session: 'v-enforce', mode: 'enforce', payload: sub(`${SECRET_PROMPT} vscode enforce`, { description: `${SECRET_DESCRIPTION} vscode enforce` }) },
+      { label: 'vscode-suggest', session: 'v-suggest', mode: 'suggest', payload: sub(`${SECRET_PROMPT} vscode suggest`, { description: `${SECRET_DESCRIPTION} vscode suggest` }) },
+    ] as const
+    for (const item of cases) {
+      const payload = JSON.parse(JSON.stringify(item.payload))
+      if ('sessionId' in payload) payload.sessionId = item.session
+      else payload.session_id = item.session
+      const ran = runHook('pretooluse.ts', payload, home, { TASKSHAPE_MODE: item.mode })
+      assert.equal(ran.status, 0, `${item.label}: ${ran.stderr}`)
+      if (item.mode === 'enforce') {
+        const output = JSON.parse(ran.stdout)
+        const forwarded = 'modifiedArgs' in output ? output.modifiedArgs : output.hookSpecificOutput.updatedInput
+        assert.equal(forwarded.prompt, 'toolArgs' in payload ? payload.toolArgs.prompt : payload.tool_input.prompt)
+        assert.equal(forwarded.description, 'toolArgs' in payload ? payload.toolArgs.description : payload.tool_input.description)
+      } else {
+        assert.equal(ran.stdout, '', `${item.label}: suggest mode must be quiet`)
+      }
+      const pending = readFileSync(join(home, 'pending', `${item.session}.json`), 'utf8')
+      assert.ok(pending.length > 0, `${item.label}: pending row must be written before outcome`)
+      assert.equal(pending.includes(SECRET_PROMPT), false)
+      assert.equal(pending.includes(SECRET_DESCRIPTION), false)
+      assert.equal(pending.includes('"description"'), false)
+      const stopPayload = 'sessionId' in payload
+        ? { sessionId: item.session, agentType: 'general-purpose', stopReason: 'end_turn', response: 'done' }
+        : { session_id: item.session, agent_id: 'a1', agent_type: 'default', stop_hook_active: false }
+      const stopped = runHook('subagentstop.ts', stopPayload, home)
+      assert.equal(stopped.status, 0, `${item.label}: ${stopped.stderr}`)
+    }
+    const decisions = readFileSync(join(home, 'decisions.jsonl'), 'utf8')
+    const outcomes = readFileSync(join(home, 'outcomes.jsonl'), 'utf8')
+    assert.ok(decisions.length > 0)
+    assert.ok(outcomes.length > 0)
+    assert.equal(decisions.trim().split('\n').length, 4)
+    assert.equal(outcomes.trim().split('\n').length, 4)
+    assert.deepEqual(JSON.parse(decisions.trim().split('\n')[0]).mode, 'enforced')
+    assert.deepEqual(JSON.parse(decisions.trim().split('\n')[1]).mode, 'suggested')
+    assert.ok(existsSync(join(home, 'pending')), 'pending directory must be created')
+    const persisted = allPersistedText(home)
+    assert.ok(persisted.length > 0)
+    assert.equal(persisted.includes(SECRET_PROMPT), false)
+    assert.equal(persisted.includes(SECRET_DESCRIPTION), false)
+    assert.equal(persisted.includes('"description"'), false)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
 test('VS Code: explicit models and named agents are left alone unless configured otherwise', () => {
   assert.equal(outcomeFor(sub('x', { model: 'Claude Sonnet 5.5 (copilot)' }), enforce, decide, table).kind, 'skip')
   assert.equal(outcomeFor(sub('x', { model: 'Claude Sonnet 5.5 (copilot)' }), { ...enforce, respectExplicitModel: false }, decide, table).kind, 'enforce')
@@ -281,9 +337,40 @@ test('pending decisions: exact session first, oldest VS Code decision as the fal
   }
 })
 
-const runHook = (script: string, payload: unknown, home: string, extraEnv: Record<string, string> = {}) =>
-  spawnSync(process.execPath, ['--no-warnings', '--experimental-strip-types', join(here, script)],
-    { input: JSON.stringify(payload), encoding: 'utf8', env: { ...process.env, TASKSHAPE_HOME: home, TASKSHAPE_MODE: 'enforce', TASKSHAPE_COMMAND: '', TASKSHAPE_DISCOVER_MODELS: 'false', ...extraEnv } })
+const runHook = (script: string, payload: unknown, home: string, extraEnv: Record<string, string> = {}, hooksDir = here) =>
+  spawnSync(process.execPath, ['--no-warnings', '--experimental-strip-types', join(hooksDir, script)],
+    { input: JSON.stringify(payload), encoding: 'utf8', env: {
+      ...process.env,
+      TASKSHAPE_HOME: home,
+      TASKSHAPE_MODE: 'enforce',
+      TASKSHAPE_BUDGET: '',
+      TASKSHAPE_PROFILES: '',
+      TASKSHAPE_COMMAND: '',
+      TASKSHAPE_CONFIG: '',
+      TASKSHAPE_RESPECT_EXPLICIT_MODEL: '',
+      TASKSHAPE_ROUTE_NAMED_AGENTS: '',
+      TASKSHAPE_DISCOVER_MODELS: 'false',
+      TASKSHAPE_COPILOT: '',
+      ...extraEnv,
+    } })
+
+const installPluginFixture = (dir: string): string => {
+  const root = join(dir, "Task Shape O'Brien ü %23 # plugin")
+  const hooks = join(root, 'hooks')
+  mkdirSync(hooks, { recursive: true })
+  for (const name of ['discover.ts', 'harness.ts', 'policy.ts', 'pretooluse.ts', 'rubric.ts', 'sessionstart.ts', 'shapes.ts', 'subagentstop.ts']) {
+    copyFileSync(join(here, name), join(hooks, name))
+  }
+  copyFileSync(profilesPath, join(root, 'profiles.copilot.json'))
+  return hooks
+}
+
+const allPersistedText = (home: string): string =>
+  ['decisions.jsonl', 'outcomes.jsonl', join('pending', 's1.json'), join('pending', 'v1.json'), join('pending', 'v2.json'), join('pending', 'v3.json')]
+    .map(name => {
+      const path = join(home, name)
+      return existsSync(path) ? readFileSync(path, 'utf8') : ''
+    }).join('\n')
 
 test('end to end: the scripts answer both harnesses exactly as the hooks expect', () => {
   const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
@@ -325,12 +412,41 @@ test('end to end: the scripts answer both harnesses exactly as the hooks expect'
     assert.ok(decisions.some(d => d.harness === 'copilot-cli' && d.mode === 'enforced'))
     assert.ok(decisions.some(d => d.harness === 'vscode-local' && d.mode === 'enforced' && d.model_name === 'GPT-5 mini (copilot)' && d.main_model === 'gpt-5-mini'))
     assert.ok(decisions.some(d => d.harness === 'vscode-local' && d.mode === 'suggested'))
+    assert.ok(decisions.every(d => !('description' in d)), 'decision rows must not persist raw task descriptions')
     const outcomes = readFileSync(join(home, 'outcomes.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
     assert.equal(outcomes.length, 2)
     assert.ok(outcomes.some(o => o.harness === 'vscode-local' && o.accepted === null && o.model === 'gpt-6-luna'))
     assert.ok(outcomes.some(o => o.harness === 'copilot-cli' && o.accepted === true))
     assert.equal(JSON.parse(readFileSync(join(home, 'copilot.json'), 'utf8')).mode, 'enforce', 'later hooks never rewrite the config')
+    const persisted = allPersistedText(home)
+    assert.equal(persisted.includes(COUPLED), false, 'persistent files must not contain the raw Copilot prompt')
+    assert.equal(persisted.includes(TYPO), false, 'persistent files must not contain the raw VS Code prompt')
+    assert.equal(persisted.includes('"description"'), false, 'persistent files must not contain raw descriptions')
   } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('end to end: an installed plugin path with spaces and URL characters still loads bundled profiles', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'taskshape-install-'))
+  const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
+  try {
+    const hooks = installPluginFixture(tmp)
+    const prompt = 'Own customer export, tests, and rollout plan; coordinate API and UI changes'
+    const description = 'Private customer export details #%'
+    const cli = runHook('pretooluse.ts', task(prompt, { description }), home, {}, hooks)
+    assert.equal(cli.status, 0, cli.stderr)
+    assert.equal(JSON.parse(cli.stdout).modifiedArgs.prompt, prompt)
+    assert.equal(typeof JSON.parse(cli.stdout).modifiedArgs.model, 'string')
+    const local = runHook('pretooluse.ts', sub(prompt, { description }), home, {}, hooks)
+    assert.equal(local.status, 0, local.stderr)
+    assert.match(JSON.parse(local.stdout).hookSpecificOutput.updatedInput.model, /\(copilot\)$/)
+    const persisted = allPersistedText(home)
+    assert.equal(persisted.includes(prompt), false)
+    assert.equal(persisted.includes(description), false)
+    assert.equal(persisted.includes('"description"'), false)
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
     rmSync(home, { recursive: true, force: true })
   }
 })
@@ -394,6 +510,63 @@ test('VS Code hooks.json: the shell pre-filter runs the hook only for runSubagen
       assert.ok(cmd.includes('${CLAUDE_PLUGIN_ROOT}/hooks/'), `${event} command must address the plugin root token`)
     }
   } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('VS Code hooks.json: PowerShell pre-filter runs hooks from a plugin path with spaces', { skip: process.platform !== 'win32' || !existsSync(join(here, 'hooks.json')) }, () => {
+  const pwsh = spawnSync('pwsh', ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.ToString()'], { encoding: 'utf8' })
+  assert.equal(pwsh.status, 0, pwsh.stderr)
+  const hooks = JSON.parse(readFileSync(join(here, 'hooks.json'), 'utf8'))
+  const startCommand = String(hooks.hooks.SessionStart[0].hooks[0].powershell)
+  const preCommand = String(hooks.hooks.PreToolUse[0].hooks[0].powershell)
+  const stopCommand = String(hooks.hooks.SubagentStop[0].hooks[0].powershell)
+  const tmp = mkdtempSync(join(tmpdir(), 'taskshape pwsh ü '))
+  const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
+  try {
+    const hooksDir = installPluginFixture(tmp)
+    const pluginRoot = dirname(hooksDir)
+    const env = {
+      ...process.env,
+      CLAUDE_PLUGIN_ROOT: pluginRoot,
+      TASKSHAPE_HOME: home,
+      TASKSHAPE_MODE: 'enforce',
+      TASKSHAPE_BUDGET: '',
+      TASKSHAPE_PROFILES: '',
+      TASKSHAPE_COMMAND: '',
+      TASKSHAPE_CONFIG: '',
+      TASKSHAPE_RESPECT_EXPLICIT_MODEL: '',
+      TASKSHAPE_ROUTE_NAMED_AGENTS: '',
+      TASKSHAPE_DISCOVER_MODELS: 'false',
+      TASKSHAPE_COPILOT: '',
+    }
+    const start = spawnSync('pwsh', ['-NoProfile', '-Command', startCommand], {
+      input: JSON.stringify({ session_id: 'pwsh-v1', source: 'new', model: 'gpt-5-mini', agent_type: 'agent' }), encoding: 'utf8', env })
+    assert.equal(start.status, 0, start.stderr)
+    assert.equal(start.stdout, '')
+    const hit = spawnSync('pwsh', ['-NoProfile', '-Command', preCommand], { input: JSON.stringify({ ...sub(COUPLED), session_id: 'pwsh-v1' }), encoding: 'utf8', env })
+    assert.equal(hit.status, 0, hit.stderr)
+    const output = JSON.parse(hit.stdout)
+    assert.equal(output.hookSpecificOutput.permissionDecision, 'allow')
+    assert.equal(output.hookSpecificOutput.updatedInput.model, 'GPT-5 mini (copilot)')
+    const logged = readFileSync(join(home, 'decisions.jsonl'), 'utf8')
+    const row = JSON.parse(logged.trim())
+    assert.equal(row.main_model, 'gpt-5-mini')
+    assert.equal(row.model_name, 'GPT-5 mini (copilot)')
+    const miss = spawnSync('pwsh', ['-NoProfile', '-Command', preCommand], { input: JSON.stringify({ tool_name: 'read_file', tool_input: { path: 'x' } }), encoding: 'utf8', env })
+    assert.equal(miss.status, 0, miss.stderr)
+    assert.equal(miss.stdout, '')
+    assert.equal(readFileSync(join(home, 'decisions.jsonl'), 'utf8'), logged, 'the pre-filter must not start node for other tools')
+    const stop = spawnSync('pwsh', ['-NoProfile', '-Command', stopCommand], {
+      input: JSON.stringify({ session_id: 'pwsh-v1', agent_id: 'a1', agent_type: 'default', stop_hook_active: false }), encoding: 'utf8', env })
+    assert.equal(stop.status, 0, stop.stderr)
+    assert.equal(stop.stdout, '')
+    const outcome = JSON.parse(readFileSync(join(home, 'outcomes.jsonl'), 'utf8').trim())
+    assert.equal(outcome.harness, 'vscode-local')
+    assert.equal(outcome.model, 'gpt-5-mini')
+    assert.equal(outcome.accepted, null)
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
     rmSync(home, { recursive: true, force: true })
   }
 })

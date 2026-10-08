@@ -8,15 +8,26 @@ applies before the tool runs. A `SessionStart` hook remembers the session's main
 `SubagentStop` hook records the outcome. Nothing is ever blocked: on any failure the launch goes through
 unchanged.
 
-Needs Node 22.6+ on the PATH VS Code sees (the hooks run with `--experimental-strip-types`; no install
-step, no Python).
+Needs GitHub Copilot access, VS Code with agent plugin support, and Node 22.6+ on the PATH VS Code sees
+(the hooks run with `--experimental-strip-types`; no Python needed).
 
 ## Install
 
 Add the repository as a plugin marketplace and install `taskshape-vscode` from the Extensions view:
 
-1. Settings: `"chat.plugins.marketplaces": ["AlexandreRra/taskshape"]`
+1. Settings:
+
+   ```json
+   {
+     "chat.plugins.enabled": true,
+     "chat.plugins.marketplaces": ["AlexandreRra/taskshape"]
+   }
+   ```
+
 2. Extensions view, search `@agentPlugins taskshape`, install **taskshape-vscode**.
+
+VS Code asks you to trust a new marketplace. This plugin runs local hooks with the editor's permissions;
+review the source before granting trust. See [VS Code's agent plugin documentation](https://code.visualstudio.com/docs/agent-customization/agent-plugins).
 
 From a local clone: `"chat.plugins.marketplaces": ["file:///path/to/taskshape"]`.
 
@@ -29,6 +40,9 @@ to pick a budget, edit that file (shared with the Copilot CLI plugin; it is neve
 ```json
 { "mode": "suggest", "budget": "standard" }
 ```
+
+Decision and outcome entries contain routing metadata; task prompts and descriptions are excluded from
+those fields. Logs from earlier versions may still contain task descriptions.
 
 Environment variables override the file: `TASKSHAPE_MODE`, `TASKSHAPE_BUDGET`, `TASKSHAPE_PROFILES`,
 `TASKSHAPE_COMMAND` (path to the Python `taskshape` CLI, for Laya), `TASKSHAPE_CONFIG`,
@@ -65,8 +79,9 @@ wait. Each discovery leaves one ordinary, never-prompted session entry under `~/
 - `SubagentStop` exposes no stop reason; outcomes are recorded with `accepted: null` there.
 - Suggest mode prints nothing (VS Code warns about non-JSON hook output).
 
-Live behavior was verified offline against the exact payloads and outputs read from the VS Code bundle
-(see the end-to-end test); a run inside VS Code itself is still pending.
+Hook behavior is tested against payloads and outputs read from the VS Code bundle, including installed
+folders with spaces and encoded characters and checks that prompts and descriptions stay out of audit
+files. A live Copilot routing session inside VS Code is still pending.
 
 ## Copilot CLI sessions inside VS Code
 
@@ -84,3 +99,5 @@ node --experimental-strip-types --test plugins/vscode/hooks/harness.test.ts
 
 Everything under `hooks/` except `hooks.json` is a copy of `plugins/shared/` (kept identical by
 `scripts/sync-shared.py --check`, run by the Python test suite).
+
+The [CI workflow](../../.github/workflows/ci.yml) also runs these tests on Linux, Windows and macOS.

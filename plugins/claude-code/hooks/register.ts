@@ -139,7 +139,7 @@ export const register: Register = (on, options) => {
     await appendLine($, decisionsPath, { ts: Date.now() / 1000, origin: 'claude-code-plugin', mode: apply ? 'enforced' : 'suggested',
       phase, shape: decision.shape, profile: decision.profile, model: decision.model, effort: decision.effort,
       answer_confidence: decision.answer_confidence, source: decision.source, reason: decision.reason, warnings: decision.warnings,
-      subagent_type: e.subagent_type ?? null, description: e.description })
+      subagent_type: e.subagent_type ?? null })
     const started = Date.now()
     const ran = await next(apply ? { ...e, model: alias } : e)
     if (ran.deny === undefined) {

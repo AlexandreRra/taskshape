@@ -29,6 +29,9 @@ Nothing else to set: routing is on. Decisions go to `~/.taskshape/decisions.json
 /plugin configure taskshape@taskshape      # mode -> suggest
 ```
 
+Decision and outcome entries contain routing metadata; task prompts and descriptions are excluded from
+those fields. Logs from earlier versions may still contain task descriptions.
+
 ## Options (all optional)
 
 | Option | Default | Meaning |

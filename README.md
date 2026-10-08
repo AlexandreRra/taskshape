@@ -1,118 +1,232 @@
 # taskshape
 
-Cost-aware model routing for agent harnesses: classify the **shape** of a task with a small local
-decision model ([Laya](https://huggingface.co/convaiinnovations/laya)), then let a transparent policy
-table pick the cheapest model and effort level whose capability covers that shape.
+taskshape is a model router for agent tasks. It classifies a task and selects a model and effort setting
+from a configured profile table.
 
-Status: early scaffold extracted from a working deployment (the TinyTames supervisor), not yet a
-released package. Working name; license Apache-2.0 (same as Laya).
+The project is experimental. It includes:
 
-## Why two decisions instead of one
+- host plugins for Claude Code, GitHub Copilot CLI and VS Code agent mode;
+- a dependency-free Python CLI for routing, validation and outcome reports;
+- optional MCP and Laya support for local server integration and fine-tuned classifiers.
 
-Models change every month; task shapes do not. Training a classifier on *which model to call*
-means retraining whenever the lineup moves. Training it on *what kind of task this is* and keeping
-the model choice in a dated, editable table means:
+The Python router reads local catalog and profile JSON files and returns a routing decision as JSON.
+It uses a rule-based classifier by default, with optional support for a local Laya checkpoint. It does
+not call model-provider APIs.
 
-- the routing decision is inspectable (`shape -> profile`, with the reason printed);
-- cost-benefit lives in data (price per token, acceptance rate per shape and profile), not in the weights;
-- the classifier can be fine-tuned once per domain on a few hundred labelled briefs and reused.
+## How routing works
 
-Shapes (`src/taskshape/shapes.py`): `lookup`, `routine`, `demanding`, `coupled`, `review`,
-`architecture`, `visual`, each with a required capability class 0-4.
+The classifier assigns a category to a task. The routing policy uses that category and the profile table
+to select a model.
 
-## Pieces
+For each routing request, taskshape:
 
-| Piece | What it does |
+1. classifies the task into one of the categories listed below;
+2. selects an eligible profile using its capability, cost tier, phase and the configured budget;
+3. returns the selected model, effort setting and routing reason.
+
+Profiles are defined in JSON. Copy [catalog/profiles.example.json](catalog/profiles.example.json),
+keep the models available to your installation, adjust the profile settings, and validate the file before
+using it. Updating model profiles does not require changing the classifier.
+
+## Task shapes
+
+The classifier assigns one of these categories, called task shapes:
+
+| Shape | Meaning |
 | --- | --- |
-| `catalog/models.json` | Dated, source-linked notes on current models: positioning, strengths, weaknesses, prices, effort levels. Edit when the market moves. |
-| `catalog/profiles.example.json` | A deployment's authorized `model + effort` profiles with a capability class, a cost tier, phases and flags. Copy and edit per installation. |
-| `taskshape route` | Classifies the task (Laya checkpoint, or a regex rubric as fallback) and applies the policy table under a budget. Prints the decision as JSON with probabilities, reason and warnings. |
-| `taskshape record` / `report` | Append execution outcomes (accepted, tokens, seconds) and summarize acceptance and cost per shape and profile, suggesting cheaper tiers that already hold up. |
-| `taskshape lab` | Build a labelled dataset from your own briefs, evaluate a checkpoint on held-out splits, fine-tune Laya locally (GPU with ~4 GB is enough), compare and adopt a checkpoint only when it does not regress. |
+| `lookup` | Exact lookup or extraction with no judgment. |
+| `routine` | Small bounded edits, docs-only work, config changes or read-only discovery. |
+| `demanding` | Single-subsystem work that needs several steps and verification. |
+| `visual` | Screenshot, mockup, layout or image inspection. Requires a vision-capable profile. |
+| `coupled` | Higher-risk correctness work across persistence, migrations, concurrency, security boundaries or multiple systems. |
+| `review` | Independent read-only review of a bounded change. |
+| `architecture` | Planning, specification, design critique or open-ended frontier reasoning. |
 
-No provider is ever called by this package. Routing runs offline on CPU in a few seconds; the
-network is only needed to download the base Laya checkpoint once.
+Each profile declares a capability level, cost tier, model, effort, phases and optional flags. The policy picks the lowest cost-tier profile whose capability covers the classified shape within the selected budget.
+If no adequate profile fits the budget, it returns the strongest eligible profile within budget and includes a warning. If no eligible profile fits the budget at all, routing returns an error.
 
-## Plug and play (Claude Code)
+## Host plugins
+
+The host plugins include bundled rubric/profiles, so Python is optional. They default to `enforce`; switch
+to `suggest` to log decisions without rewriting launches.
+
+### Claude Code
+
+Requires Claude Code 2.1.289 or later.
 
 ```bash
 claude plugin marketplace add AlexandreRra/taskshape
 claude plugin install taskshape@taskshape
 ```
 
-That is the whole install. The plugin ships its own rubric and a built-in Claude profile table, so it
-routes every sub-agent launch immediately (`enforce` mode; decisions in `~/.taskshape/decisions.jsonl`,
-outcomes in `~/.taskshape/outcomes.jsonl`). `/plugin configure taskshape@taskshape` switches it to
-`suggest`, which only logs. No Python needed; see `plugins/claude-code/README.md`.
+The Claude Code plugin routes eligible `Agent` launches with a built-in Claude profile table. Launches that already name a model are respected by default, and forks inherit the parent model. See the [Claude Code guide](plugins/claude-code/README.md).
 
-## Plug and play (GitHub Copilot CLI)
+### GitHub Copilot CLI
+
+Requires Node 22.6 or later.
 
 ```bash
 copilot plugin install AlexandreRra/taskshape:plugins/copilot
 ```
 
-A `preToolUse` hook on Copilot's `task` tool routes every sub-agent launch across every provider
-your plan offers (OpenAI, Anthropic, Google, xAI, Moonshot, Microsoft) and, in `enforce` mode,
-rewrites both `model` and `reasoning_effort`; a `subagentStop` hook records the outcome. The first session
-writes `~/.taskshape/copilot.json` with the defaults (`enforce`; set `mode` to `suggest` there to only observe)
-and discovers which models the account offers through the CLI's own ACP server (no model call), so routing
-never names a model the plan lacks. Needs Node 22.6+ only.
-See `plugins/copilot/README.md`.
+The Copilot CLI plugin routes eligible `task` launches and can rewrite both `model` and `reasoning_effort`. Model discovery uses the Copilot CLI's own ACP server when available; if discovery is missing or fails, routing can fall back to cached or shipped model information. See the [Copilot CLI guide](plugins/copilot/README.md).
 
-## Plug and play (VS Code agent mode)
+### VS Code Agent Mode
+
+Requires GitHub Copilot access, VS Code with agent plugin support, and Node 22.6 or later on the PATH
+VS Code sees.
+
+Add this marketplace, then install `taskshape-vscode` from the Extensions view with
+`@agentPlugins taskshape`:
 
 ```json
-{ "chat.plugins.marketplaces": ["AlexandreRra/taskshape"] }
+{
+  "chat.plugins.enabled": true,
+  "chat.plugins.marketplaces": ["AlexandreRra/taskshape"]
+}
 ```
 
-Then install **taskshape-vscode** from the Extensions view (`@agentPlugins taskshape`). A `PreToolUse`
-hook on VS Code's `runSubagent` tool routes every sub-agent launch and, in `enforce` mode, rewrites the
-model through `updatedInput`, staying within VS Code's rule that a sub-agent may not cost more than the
-main model. It shares `~/.taskshape/copilot.json` with the Copilot CLI plugin (written on the first session,
-`enforce` by default) and, with the Copilot CLI installed, the same daily discovery of the account's models.
-Copilot CLI sessions started from VS Code use the Copilot CLI plugin above instead. Needs Node 22.6+ only. See `plugins/vscode/README.md`.
+The VS Code plugin routes eligible `runSubagent` launches and rewrites the model through VS Code's hook output. It keeps launches within VS Code's main-model cost ceiling when that ceiling is known. Hook behavior is tested against VS Code payloads; routing in a live Copilot session remains unverified. See the [VS Code guide](plugins/vscode/README.md).
 
-## Quick start (Python side: Laya, lab, MCP)
+## Python quick start
+
+Use the Python package when you want explicit routing commands, MCP integration, records, reports or Laya
+training. It requires Python 3.12 or later, and the core install has no runtime dependencies.
 
 ```bash
-python3 -m venv .venv && . .venv/bin/activate
-pip install -e ".[laya]"          # core has no dependencies; the laya extra brings torch
+git clone https://github.com/AlexandreRra/taskshape.git
+cd taskshape
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -e .
 taskshape validate --catalog catalog/models.json --profiles catalog/profiles.example.json
-taskshape route --profiles catalog/profiles.example.json --budget standard \
-    --task "Own payments/ledger.py and its tests; keep the v3 ledger format readable; migration must be idempotent"
 ```
 
-Without a fine-tuned checkpoint the `heuristic` backend (a transparent regex rubric) is used and
-the decision says so. To use Laya: `taskshape route --backend laya --checkpoint <dir> ...`.
-
-## Fine-tuning on your own briefs
+Route a task with the dependency-free rubric backend:
 
 ```bash
-taskshape lab dataset --briefs briefs.jsonl --out lab/2026-10   # rows: {"task", "phase", "shape"?, "template"?}
-taskshape lab eval --checkpoint <base> --dataset lab/2026-10/heldout.jsonl --out lab/2026-10/base.json
-taskshape lab finetune --base <base> --train lab/2026-10/train.jsonl --out checkpoints/2026-10
-taskshape lab eval --checkpoint checkpoints/2026-10 --dataset lab/2026-10/heldout.jsonl --out lab/2026-10/cand.json
-taskshape lab adopt --config taskshape.json --checkpoint checkpoints/2026-10 \
-    --baseline lab/2026-10/base.json --candidate lab/2026-10/cand.json --meta lab/2026-10/meta.json
+taskshape route \
+  --catalog catalog/models.json \
+  --profiles catalog/profiles.example.json \
+  --budget standard \
+  --backend heuristic \
+  --task "Own ledger.py and tests; keep the v3 ledger format readable; the migration must be idempotent"
 ```
 
-`adopt` refuses a candidate that loses accuracy on any held-out split, that was evaluated on a
-different dataset build than it was trained from, or that became over-confident.
+The command prints JSON with the chosen shape, profile, model, effort, reason, warnings and considered
+profiles. Add `--log records/decisions.jsonl` to append a decision audit trail, or `--allowed` to restrict
+the decision to profiles a harness is allowed to call.
 
-## Harness integration
+## Records and reports
 
-- **MCP server** (`taskshape-mcp`, stdio, started by the client, no network): tools `route`, `record`,
-  `report`, `policy_table`. `claude mcp add taskshape -- /path/.venv/bin/taskshape-mcp --profiles profiles.json --config taskshape.json --records records/outcomes.jsonl`.
-- **Claude Code plugin** (`plugins/claude-code`): a function hook on the `Agent` tool routes every
-  sub-agent launch with an embedded rubric and built-in profiles; `suggest` mode logs, `enforce` mode
-  rewrites the model; set `command` to hand classification to the Python CLI (Laya). See its README.
-- **Copilot CLI plugin** (`plugins/copilot`): Node hooks (`sessionStart` discovers the account's models through
-  `copilot --acp`, `preToolUse` on `task`, `subagentStop`) with the same embedded rubric; enforce mode rewrites `model` and `reasoning_effort`; `TASKSHAPE_COMMAND` hands
-  classification to the Python CLI. Also serves Copilot CLI sessions inside VS Code. See its README.
-- **VS Code plugin** (`plugins/vscode`): the same hook scripts behind VS Code's own hook contract
-  (`PreToolUse` on `runSubagent` with `updatedInput`, `SessionStart`, `SubagentStop`); models are named
-  as VS Code displays them and capped by the main model's usage multiplier. See its README.
-- Other harnesses: the CLI prints JSON (`taskshape route --task ... --log decisions.jsonl`), so any
-  hook that can run a process can call it.
+After a routed task finishes, record the outcome:
 
-See `docs/DESIGN.md` for the design and the evidence from the first deployment.
+```bash
+taskshape record \
+  --file records/outcomes.jsonl \
+  --catalog catalog/models.json \
+  --shape coupled \
+  --profile sol61-high \
+  --model gpt-6.1-sol \
+  --effort high \
+  --accepted \
+  --task "Own ledger.py and tests; keep the v3 ledger format readable; the migration must be idempotent" \
+  --outcome accepted \
+  --input-tokens 50000 \
+  --output-tokens 5000 \
+  --seconds 30
+```
+
+Summarize acceptance and cost by shape/profile:
+
+```bash
+taskshape report \
+  --catalog catalog/models.json \
+  --profiles catalog/profiles.example.json \
+  --file records/outcomes.jsonl \
+  --min-samples 1
+```
+
+Reports recommend the lowest cost-tier profile that meets the acceptance and sample thresholds for each
+shape. Apply profile changes by editing the profiles file.
+
+## MCP server
+
+Install the MCP extra, then configure your MCP client to start `taskshape-mcp` over stdio:
+
+```bash
+pip install -e ".[mcp]"
+taskshape-mcp \
+  --profiles catalog/profiles.example.json \
+  --catalog catalog/models.json \
+  --records records/outcomes.jsonl \
+  --decisions records/decisions.jsonl \
+  --backend heuristic
+```
+
+The server exposes `route`, `record`, `report` and `policy_table`. It runs locally and does not open a
+network port. Add `--config taskshape.json --backend auto` after adopting a Laya checkpoint.
+
+## Laya and the lab
+
+The default CLI uses the rubric backend. To classify with
+[Laya](https://huggingface.co/convaiinnovations/laya), install the optional ML dependencies and point
+taskshape at an existing local checkpoint. `checkpoints/taskshape-current` is a placeholder path.
+
+```bash
+pip install -e ".[laya]"
+taskshape route \
+  --catalog catalog/models.json \
+  --profiles catalog/profiles.example.json \
+  --backend laya \
+  --checkpoint checkpoints/taskshape-current \
+  --task "Write the ADR for the queue redesign; weigh tradeoffs; no code"
+```
+
+The lab commands build datasets from your own labelled briefs, evaluate checkpoints, fine-tune locally, and
+adopt a candidate only when the accuracy, calibration, dataset provenance and checkpoint provenance checks
+pass. `checkpoints/base-laya` and `checkpoints/taskshape-candidate` are placeholder paths for local
+checkpoints.
+
+```bash
+taskshape lab dataset --briefs briefs.jsonl --out lab/run
+taskshape lab eval --checkpoint checkpoints/base-laya --dataset lab/run/heldout.jsonl --out lab/run/base.json
+taskshape lab finetune --base checkpoints/base-laya --train lab/run/train.jsonl --out checkpoints/taskshape-candidate
+taskshape lab eval --checkpoint checkpoints/taskshape-candidate --dataset lab/run/heldout.jsonl --out lab/run/candidate.json
+taskshape lab adopt \
+  --config taskshape.json \
+  --checkpoint checkpoints/taskshape-candidate \
+  --baseline lab/run/base.json \
+  --candidate lab/run/candidate.json \
+  --meta lab/run/meta.json
+```
+
+Brief rows are JSONL objects with `task`, optional `phase`, optional human `shape`, optional `role`, optional
+`template`, and optional `context`. The lab disables network access during evaluation and fine-tuning; the
+base checkpoint and dependencies must already be local. See [docs/DESIGN.md](docs/DESIGN.md) for
+design details.
+
+## Limitations
+
+This is pre-alpha software. The shipped profile and catalog files are examples and may need updates to
+match the models available through your provider plan. The rubric backend uses fixed classification rules;
+it does not use a trained model. Cost estimates are available only when the catalog has verified prices
+for the selected model. Provider plans and host hook behavior can change; see the plugin READMEs for
+host-specific details.
+
+## Development
+
+Run the dependency-free test suite:
+
+```bash
+python -m unittest discover -s tests
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution notes.
+
+The [CI workflow](.github/workflows/ci.yml) is configured to run the Python tests, shared-copy check and
+Node hook tests on Linux, Windows and macOS. Hook tests cover installed plugin folders, encoded paths
+and exclusion of task prompts and descriptions from audit fields. Routing in live Copilot sessions
+requires separate validation.
+
+License: [Apache-2.0](LICENSE).

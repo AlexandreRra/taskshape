@@ -12,6 +12,16 @@ const cliDecision = (model: string) => JSON.stringify({
 
 const coupled = { tool: 'Agent' as const, description: 'ledger migration', prompt: 'Own ledger.py and tests; the migration must be idempotent' }
 const typo = { tool: 'Agent' as const, description: 'typo', prompt: 'Fix the typo in README and bump the version' }
+const privateSuggest = {
+  tool: 'Agent' as const,
+  description: 'PRIVATE_SUGGEST_DESCRIPTION_do_not_persist_b42a7d',
+  prompt: 'PRIVATE_SUGGEST_PROMPT_do_not_persist_a93f21 Own billing ledger and tests; migration must be idempotent',
+}
+const privateEnforce = {
+  tool: 'Agent' as const,
+  description: 'PRIVATE_ENFORCE_DESCRIPTION_do_not_persist_f71c20',
+  prompt: 'PRIVATE_ENFORCE_PROMPT_do_not_persist_c84e31 Own auth migration and tests; migration must be idempotent',
+}
 
 // A file system that remembers what the plugin wrote, and an environment with a home directory.
 const wire = (on: any, files: Record<string, string>, writes: Written[], env: Record<string, string> = { HOME: '/home/t' }) => {
@@ -22,6 +32,16 @@ const wire = (on: any, files: Record<string, string>, writes: Written[], env: Re
     return { value: files[e.path] }
   })
   on('fs.write', (_: unknown, e: { path: string; text: string }) => { files[e.path] = e.text; writes.push({ path: e.path, text: e.text }); return { value: undefined } })
+}
+
+const persistedText = (files: Record<string, string>, writes: Written[]) =>
+  Object.values(files).join('\n') + '\n' + writes.map(w => w.text).join('\n')
+
+const expectNoRawTaskText = (files: Record<string, string>, writes: Written[], task: { description: string; prompt: string }) => {
+  const text = persistedText(files, writes)
+  expect(text).not.toContain(task.description)
+  expect(text).not.toContain(task.prompt)
+  expect(text).not.toContain('"description"')
 }
 
 describe('aliasFor', () => {
@@ -49,6 +69,9 @@ describe('zero configuration', () => {
     expect(decision.profile).toBe('opus')
     expect(decision.mode).toBe('suggested')
     expect(decision.source).toBe('rubric')
+    expect('description' in decision).toBe(false)
+    expect(files['/home/t/.taskshape/decisions.jsonl']).not.toContain(coupled.description)
+    expect(files['/home/t/.taskshape/decisions.jsonl']).not.toContain(coupled.prompt)
     const outcome = JSON.parse(writes[1].text.trim())
     expect(outcome.accepted).toBe(true)
     expect(outcome.model).toBe('inherited')
@@ -69,6 +92,52 @@ describe('zero configuration', () => {
     const outcome = JSON.parse(files['/home/t/.taskshape/outcomes.jsonl'].trim().split('\n')[0])
     expect(outcome.model).toBe('claude-opus-5-5')
     expect(outcome.outcome).toBe('enforced')
+  })
+
+  test('suggest mode keeps private task text in the launch but out of decisions and outcomes', { options: { mode: 'suggest' } }, async ($, on) => {
+    const files: Record<string, string> = {}
+    const writes: Written[] = []
+    const seen: unknown[] = []
+    wire(on, files, writes)
+    on('tool.call', { tool: 'Agent' }, (_: unknown, e: { description?: string; prompt?: string; model?: string }) => {
+      seen.push({ description: e.description, prompt: e.prompt, model: e.model })
+      return { result: 'done', text: 'done' }
+    })
+    await $.tool.call(privateSuggest)
+    expect(seen).toEqual([{ description: privateSuggest.description, prompt: privateSuggest.prompt, model: undefined }])
+    expect(writes.map(w => w.path)).toEqual(['/home/t/.taskshape/decisions.jsonl', '/home/t/.taskshape/outcomes.jsonl'])
+    const decision = JSON.parse(files['/home/t/.taskshape/decisions.jsonl'].trim())
+    expect(decision.mode).toBe('suggested')
+    expect(decision.shape).toBe('coupled')
+    expect(decision.profile).toBe('opus')
+    expect('description' in decision).toBe(false)
+    const outcome = JSON.parse(files['/home/t/.taskshape/outcomes.jsonl'].trim())
+    expect(outcome.outcome).toBe('suggested')
+    expect(outcome.model).toBe('inherited')
+    expectNoRawTaskText(files, writes, privateSuggest)
+  })
+
+  test('enforce mode keeps private task text in the launch but out of decisions and outcomes', async ($, on) => {
+    const files: Record<string, string> = {}
+    const writes: Written[] = []
+    const seen: unknown[] = []
+    wire(on, files, writes)
+    on('tool.call', { tool: 'Agent' }, (_: unknown, e: { description?: string; prompt?: string; model?: string }) => {
+      seen.push({ description: e.description, prompt: e.prompt, model: e.model })
+      return { result: 'done', text: 'done' }
+    })
+    await $.tool.call(privateEnforce)
+    expect(seen).toEqual([{ description: privateEnforce.description, prompt: privateEnforce.prompt, model: 'opus' }])
+    expect(writes.map(w => w.path)).toEqual(['/home/t/.taskshape/decisions.jsonl', '/home/t/.taskshape/outcomes.jsonl'])
+    const decision = JSON.parse(files['/home/t/.taskshape/decisions.jsonl'].trim())
+    expect(decision.mode).toBe('enforced')
+    expect(decision.shape).toBe('coupled')
+    expect(decision.profile).toBe('opus')
+    expect('description' in decision).toBe(false)
+    const outcome = JSON.parse(files['/home/t/.taskshape/outcomes.jsonl'].trim())
+    expect(outcome.outcome).toBe('enforced')
+    expect(outcome.model).toBe('claude-opus-5-5')
+    expectNoRawTaskText(files, writes, privateEnforce)
   })
 
   test('CLAUDE_PLUGIN_DATA wins over the home folder', { options: { mode: 'suggest' } }, async ($, on) => {

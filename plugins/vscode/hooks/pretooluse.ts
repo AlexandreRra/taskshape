@@ -1,9 +1,10 @@
 // PreToolUse hook for sub-agent launches. Copilot CLI sends `{ toolName: "task", toolArgs }`; VS Code's
 // agent mode sends `{ tool_name: "runSubagent", tool_input }`. Stdin JSON in; JSON out only in enforce mode.
 // Runs with `node --experimental-strip-types`; no dependencies beyond Node 22.6+.
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import {
   DEFAULT_CONFIG, type Config, type Decide, type Decision, type HookInput, type LocalInput, appendLine, applyCatalog, dataDir, dataPaths,
   detectHarness, ensureConfig, loadProfilesFrom, originFor, outcomeFor, parseConfig, readJson, routeEmbedded, sessionModel, writeJson,
@@ -11,7 +12,10 @@ import {
 import { refreshCatalog } from './discover.ts'
 import type { Profile } from './policy.ts'
 
-const here = dirname(new URL(import.meta.url).pathname)
+const here = dirname(fileURLToPath(import.meta.url))
+const bundledProfilesPath = (): string =>
+  [join(here, '..', 'profiles.copilot.json'), join(here, 'profiles.copilot.json')].find(path => existsSync(path))
+    ?? join(here, '..', 'profiles.copilot.json')
 
 const routeWithCli = (config: Config, profilesPath: string, prompt: string, candidates: readonly Profile[], all: readonly Profile[]): Decision => {
   const argv = ['route', '--profiles', profilesPath, '--budget', config.budget, '--phase', 'work', '--task', prompt, '--origin', 'copilot-plugin']
@@ -38,7 +42,7 @@ const main = async () => {
   const origin = originFor(harness)
   ensureConfig(paths.config)
   const config = parseConfig(readJson(paths.config) ?? DEFAULT_CONFIG, process.env)
-  const profilesPath = config.profiles || join(here, '..', 'profiles.copilot.json')
+  const profilesPath = config.profiles || bundledProfilesPath()
   const warnings: string[] = []
   let shipped
   try {
@@ -79,7 +83,6 @@ const main = async () => {
     phase: decision.phase, shape: decision.shape, profile: decision.profile, model: decision.model, model_name: decision.model_name ?? null,
     effort: decision.effort, answer_confidence: decision.answer_confidence, source: decision.source, reason: decision.reason, warnings: decision.warnings,
     main_model: mainModel ?? null, agent_type: (args.agent_type as string | undefined) ?? (args.agentName as string | undefined) ?? null,
-    description: (args.description as string | undefined) ?? null,
     catalog: catalog && Object.keys(catalog.models).length > 0 ? { source: catalog.source, ts: catalog.ts, models: Object.keys(catalog.models).length, error: catalog.error ?? null } : null,
     unavailable_profiles: applied.dropped }
   appendLine(paths.decisions, row)

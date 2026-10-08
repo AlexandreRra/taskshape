@@ -8,7 +8,7 @@
             "type": "command",
             "command": "node --no-warnings --experimental-strip-types \"${CLAUDE_PLUGIN_ROOT}/hooks/pretooluse.ts\"",
             "bash": "p=$(cat); case \"$p\" in *runSubagent*) printf '%s' \"$p\" | node --no-warnings --experimental-strip-types \"${CLAUDE_PLUGIN_ROOT}/hooks/pretooluse.ts\";; esac",
-            "powershell": "$p = [Console]::In.ReadToEnd(); if ($p -match 'runSubagent') { $p | node --no-warnings --experimental-strip-types \"${CLAUDE_PLUGIN_ROOT}/hooks/pretooluse.ts\" }",
+            "powershell": "$p = [Console]::In.ReadToEnd(); if ($p -match 'runSubagent') { $p | & node --no-warnings --experimental-strip-types (Join-Path $env:CLAUDE_PLUGIN_ROOT 'hooks/pretooluse.ts') }",
             "timeout": 30
           }
         ]
@@ -20,6 +20,7 @@
           {
             "type": "command",
             "command": "node --no-warnings --experimental-strip-types \"${CLAUDE_PLUGIN_ROOT}/hooks/sessionstart.ts\"",
+            "powershell": "& node --no-warnings --experimental-strip-types (Join-Path $env:CLAUDE_PLUGIN_ROOT 'hooks/sessionstart.ts')",
             "timeout": 10
           }
         ]
@@ -31,6 +32,7 @@
           {
             "type": "command",
             "command": "node --no-warnings --experimental-strip-types \"${CLAUDE_PLUGIN_ROOT}/hooks/subagentstop.ts\"",
+            "powershell": "& node --no-warnings --experimental-strip-types (Join-Path $env:CLAUDE_PLUGIN_ROOT 'hooks/subagentstop.ts')",
             "timeout": 15
           }
         ]
