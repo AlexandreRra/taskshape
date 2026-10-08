@@ -6,7 +6,8 @@ The project is experimental. It includes:
 
 - host plugins for Claude Code, GitHub Copilot CLI, and VS Code agent mode;
 - a dependency-free Python CLI for explicit routing, validation, records, and reports;
-- optional MCP and lab support for local server integration and classifier experiments.
+- optional MCP and lab support for local server integration and classifier experiments;
+- local Laya context selection that can inspect candidate files and return only file decisions and line ranges when available.
 
 Routing is local. taskshape does not call model-provider APIs.
 
@@ -34,6 +35,44 @@ Profiles are JSON policy files. Copy [catalog/profiles.example.json](catalog/pro
 | `architecture` | Planning, specification, design critique, or open-ended frontier reasoning. |
 
 Each profile declares a capability level, cost tier, model, effort, phases, and optional flags. If profiles fit the budget but none is capable enough, routing returns the strongest eligible profile within budget with an `under-provisioned` warning. If no eligible profile fits the budget, routing returns an error.
+
+## Local context selection
+
+Use `select_context` when an agent has several candidate files and reading all of them would add unnecessary context. Taskshape reads the candidate files locally, chunks text files, asks Laya which chunks matter for the task, and returns only paths, booleans, line ranges when available, line counts, source, completeness, and warnings. It does not return raw file content.
+
+```json
+{"task":"Fix login session expiry","paths":["src/auth/session.ts","src/billing/invoices.ts"]}
+```
+
+The default behavior is plug and play: `root` defaults to the current project directory, `skip_threshold` is `0.95`, `max_file_bytes` is `262144`, `chunk_lines` is `80`, `max_chunks` is `64` across the whole request, `batch_size` is `8`, and a request accepts up to 20 paths. Advanced callers can pass those flat options when they need a different project root or bounded work budget.
+
+The tool treats paths that escape the project root, symlinks outside the root, binary files, oversized files, incomplete coverage, unavailable files, unavailable Laya, invalid classifier answers, and runtime failures conservatively. In those cases it keeps candidates available with `source: "conservative-fallback"` or `should_read: true`; incomplete coverage recommends reading the file rather than trusting a partial negative. A file is recommended for skipping only after complete coverage and a strong negative answer.
+
+From the Python CLI, supply an existing local Laya checkpoint:
+
+```bash
+taskshape select-context \
+  --task "Fix login session expiry" \
+  --path src/auth/session.ts \
+  --path src/billing/invoices.ts \
+  --checkpoint /path/to/local/laya
+```
+
+`--task-stdin` accepts the task on stdin; `--root`, `--skip-threshold`, `--max-file-bytes`, `--chunk-lines`, `--max-chunks`, and `--batch-size` override the defaults; `--config` can supply the checkpoint. A missing or unavailable checkpoint returns conservative file entries rather than a heuristic relevance judgment.
+
+The MCP server exposes the same `select_context` tool and reuses its warm Laya backend across routing, context selection, and file relevance requests. The hosted plugins include a `select-context` skill that invokes their managed runtime through `runtime-cli.ts select-context`, so users do not need to install the Python MCP extra or configure a checkpoint for the plugin path. First runtime setup still downloads the pinned Node/Python/Laya assets described below.
+
+`should_read_file` is preserved as the metadata-only API. It receives a task, path, and optional summary or excerpt supplied by the caller; it never opens the file. Prefer `select_context` when Taskshape should inspect local candidate files itself.
+
+```bash
+taskshape should-read-file \
+  --task "Fix login session expiry" \
+  --path src/auth/session.ts \
+  --summary "Validates session tokens and expiration" \
+  --checkpoint /path/to/local/laya
+```
+
+Both queries are advisory. Agents can still read files explicitly requested by the user, files named by diagnostics, or files needed to verify correctness. Installing a plugin does not intercept or block every file read, and Laya probabilities are not calibrated accuracy or measured token-savings evidence.
 
 ## Host plugins
 
@@ -153,7 +192,7 @@ taskshape-mcp \
   --backend heuristic
 ```
 
-The server exposes `route`, `record`, `report`, and `policy_table`. It runs locally and does not open a network port. Add `--config taskshape.json --backend auto` after adopting a Laya checkpoint.
+The server exposes `route`, `select_context`, `should_read_file`, `record`, `report`, and `policy_table`. It runs locally and does not open a network port. Add `--config taskshape.json --backend auto` after adopting a Laya checkpoint. `select_context` and `should_read_file` need Laya; a heuristic-only server recommends reading conservatively. The same loaded Laya instance is reused for routing, context selection, and file relevance.
 
 ## Laya and the lab
 

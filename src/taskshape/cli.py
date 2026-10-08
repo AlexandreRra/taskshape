@@ -1,4 +1,4 @@
-"""taskshape command line: route, validate, record, report, lab."""
+"""taskshape command line: route, select-context, should-read-file, validate, record, report, lab."""
 from __future__ import annotations
 import argparse
 import json
@@ -10,6 +10,8 @@ from . import records as recmod
 from .catalog import load_models, load_profiles
 from .policy import table
 from .router import HeuristicBackend, LayaBackend, route
+from .relevance import should_read_file
+from .context_selection import select_context
 
 HERE = Path(__file__).resolve().parent
 
@@ -87,6 +89,36 @@ def cmd_validate(args):
             "policy_table": {phase: table(value["profiles"], value["budgets"], phase) for phase in ("work", "review")}}
 
 
+def cmd_should_read_file(args):
+    task = _read_stdin() if args.task_stdin else args.task
+    config = labmod.load_config(args.config) if args.config else {}
+    checkpoint = args.checkpoint or config.get("checkpoint")
+    backend = None
+    if checkpoint:
+        try:
+            backend = LayaBackend(checkpoint, device=args.device)
+        except (ImportError, ValueError, OSError, RuntimeError):
+            pass  # An unavailable classifier must not hide potentially useful files.
+    return should_read_file(task, args.path, args.summary, args.excerpt, backend,
+                            head_max_len=config.get("head_max_len", labmod.DEFAULT_HEAD_MAX_LEN))
+
+
+def cmd_select_context(args):
+    task = _read_stdin() if args.task_stdin else args.task
+    config = labmod.load_config(args.config) if args.config else {}
+    checkpoint = args.checkpoint or config.get("checkpoint")
+    backend = None
+    if checkpoint:
+        try:
+            backend = LayaBackend(checkpoint, device=args.device)
+        except (ImportError, ValueError, OSError, RuntimeError):
+            pass
+    return select_context(task, args.path, root=args.root, backend=backend,
+                          head_max_len=config.get("head_max_len", labmod.DEFAULT_HEAD_MAX_LEN),
+                          skip_threshold=args.skip_threshold, max_file_bytes=args.max_file_bytes,
+                          chunk_lines=args.chunk_lines, max_chunks=args.max_chunks, batch_size=args.batch_size)
+
+
 def cmd_record(args):
     models = load_models(args.catalog) if args.catalog else None
     return recmod.record(args.file, args.shape, args.profile, args.model, args.effort, args.accepted, args.task or "",
@@ -141,6 +173,30 @@ def build_parser():
     p.add_argument("--log", help="append the decision to this JSONL file (audit trail)")
     p.add_argument("--origin", default="cli", help="who asked: cli, mcp, claude-code-plugin, ...")
     p.add_argument("--allowed", help="comma-separated profile ids the choice is restricted to (a harness ceiling)")
+    p = sub.add_parser("select-context", help="read candidates locally and recommend file line ranges")
+    task_source = p.add_mutually_exclusive_group(required=True)
+    task_source.add_argument("--task")
+    task_source.add_argument("--task-stdin", action="store_true", help="read the task text from stdin")
+    p.add_argument("--path", action="append", required=True, help="candidate path relative to the project root; repeat for multiple files")
+    p.add_argument("--root", default=".", help="project root (default: current directory)")
+    p.add_argument("--skip-threshold", type=float, default=0.95)
+    p.add_argument("--max-file-bytes", type=int, default=262144)
+    p.add_argument("--chunk-lines", type=int, default=80)
+    p.add_argument("--max-chunks", type=int, default=64, help="maximum chunks classified across all candidates")
+    p.add_argument("--batch-size", type=int, default=8)
+    p.add_argument("--checkpoint", help="optional local Laya checkpoint; without one, retain candidates conservatively")
+    p.add_argument("--config", type=Path)
+    p.add_argument("--device", default="cpu")
+    p = sub.add_parser("should-read-file", help="ask local Laya whether reading a candidate file helps the task")
+    task_source = p.add_mutually_exclusive_group(required=True)
+    task_source.add_argument("--task")
+    task_source.add_argument("--task-stdin", action="store_true", help="read the task text from stdin")
+    p.add_argument("--path", required=True, help="candidate path; the file is not opened")
+    p.add_argument("--summary", default="", help="optional file description already known to the caller")
+    p.add_argument("--excerpt", default="", help="optional small excerpt already available to the caller")
+    p.add_argument("--checkpoint", help="local Laya checkpoint; without one, conservatively recommend reading")
+    p.add_argument("--config", type=Path)
+    p.add_argument("--device", default="cpu")
     p = sub.add_parser("validate", help="validate catalog and profiles; print the policy table")
     profile_args(p)
     p = sub.add_parser("record", help="append an execution outcome")
@@ -197,12 +253,13 @@ def build_parser():
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
-    handlers = {"route": cmd_route, "validate": cmd_validate, "record": cmd_record, "report": cmd_report, "lab": cmd_lab}
+    handlers = {"route": cmd_route, "should-read-file": cmd_should_read_file, "select-context": cmd_select_context, "validate": cmd_validate,
+                "record": cmd_record, "report": cmd_report, "lab": cmd_lab}
     try:
-        print(json.dumps(handlers[args.action](args), ensure_ascii=False, indent=1, default=str))
+        _write(json.dumps(handlers[args.action](args), ensure_ascii=False, indent=1, default=str) + "\n", sys.stdout)
         return 0
     except (ValueError, OSError, KeyError, RuntimeError, FileNotFoundError) as exc:
-        print("%s: %s" % (type(exc).__name__, exc), file=sys.stderr)
+        _write("%s: %s\n" % (type(exc).__name__, exc), sys.stderr)
         return 1
 
 

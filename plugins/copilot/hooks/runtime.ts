@@ -11,8 +11,51 @@ import { shapesFor, type Phase, type Shape } from './shapes.ts'
 
 export type RuntimeStatus = { state: 'installing' | 'ready' | 'error'; message: string; python?: string; checkpoint?: string; updated?: number }
 export type Classification = { shape: Shape; answer_confidence: number; shape_probabilities: Record<string, number>; source: 'laya' }
+export type FileRelevance = {
+  should_read: boolean
+  decision: 'yes' | 'no' | null
+  path: string
+  answer_confidence: number | null
+  relevance_probabilities: Record<'yes' | 'no', number> | null
+  reason: string
+  source: 'laya' | 'conservative-fallback'
+  warnings: string[]
+}
+export type ContextRange = { start_line: number; end_line: number }
+export type ContextSelectionFile = {
+  path: string
+  should_read: boolean
+  ranges: ContextRange[]
+  total_lines: number | null
+  complete: boolean
+  source: 'laya' | 'conservative-fallback'
+  warnings: string[]
+}
+export type ContextSelection = { files: ContextSelectionFile[]; warnings: string[] }
+export type ContextSelectionOptions = {
+  root?: string
+  skip_threshold?: number
+  max_file_bytes?: number
+  chunk_lines?: number
+  max_chunks?: number
+  batch_size?: number
+}
 type Artifact = { url: string; sha256: string; path?: string; size?: number; executable?: string }
 type Assets = { version: number; python: string; uv: Record<string, Artifact>; model: { revision: string; files: Artifact[] } }
+const RELEVANCE_LIMITS = { task: 4000, path: 1000, summary: 2000, excerpt: 4000 } as const
+const RELEVANCE_SKIP_THRESHOLD = 0.8
+const CONTEXT_SELECTION_DEFAULTS = {
+  skip_threshold: 0.95,
+  max_file_bytes: 262_144,
+  chunk_lines: 80,
+  max_chunks: 64,
+  batch_size: 8,
+  head_max_len: 320,
+  // Seconds the Python process may use in total (lock wait and model load included); spawnSync waits this plus CONTEXT_PROCESS_OVERHEAD_S.
+  time_budget: 45,
+} as const
+const CONTEXT_MAX_PATHS = 20
+const CONTEXT_PROCESS_OVERHEAD_S = 20
 
 const here = dirname(fileURLToPath(import.meta.url))
 export const bundledRuntime = (): string => [join(here, '..', 'runtime'), join(here, '..', '..', 'runtime')]
@@ -170,6 +213,224 @@ export const validateClassification = (raw: unknown, phase: Phase = 'work'): Cla
   return value
 }
 
+const requireText = (name: string, value: unknown, nonempty = false): string => {
+  if (typeof value !== 'string') throw new TypeError(`${name} must be a string`)
+  if (nonempty && !value.trim()) throw new Error(`${name} must be nonempty`)
+  return value
+}
+
+const requireFiniteNumber = (name: string, value: unknown, min: number, max: number): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
+    throw new TypeError(`${name} must be a finite number between ${min} and ${max}`)
+  }
+  return value
+}
+
+const requireInteger = (name: string, value: unknown, min: number, max: number): number => {
+  if (!Number.isInteger(value) || (value as number) < min || (value as number) > max) {
+    throw new TypeError(`${name} must be an integer between ${min} and ${max}`)
+  }
+  return value as number
+}
+
+const boundedRelevanceRequest = (task: string, path: string, summary: string, excerpt: string): { request: Record<string, string>; warnings: string[] } => {
+  const request = { task, path, summary, excerpt }
+  const warnings: string[] = []
+  for (const key of Object.keys(RELEVANCE_LIMITS) as (keyof typeof RELEVANCE_LIMITS)[]) {
+    const limit = RELEVANCE_LIMITS[key]
+    if (request[key].length > limit) {
+      request[key] = request[key].slice(0, limit)
+      warnings.push(`${key} truncated to ${limit} characters for relevance classification`)
+    }
+  }
+  return { request, warnings }
+}
+
+const conservativeFileRelevance = (path: string, warnings: string[] = []): FileRelevance => ({
+  should_read: true,
+  decision: null,
+  path,
+  answer_confidence: null,
+  relevance_probabilities: null,
+  reason: 'Reading is recommended because no reliable relevance decision was available.',
+  source: 'conservative-fallback',
+  warnings: [...warnings, 'Relevance backend unavailable or invalid; reading is recommended conservatively'],
+})
+
+const conservativeContextSelection = (paths: string[], warnings: string[] = []): ContextSelection => {
+  const reason = 'Context selection backend unavailable or invalid; reading is recommended conservatively'
+  return {
+    files: paths.map(path => ({
+      path,
+      should_read: true,
+      ranges: [],
+      total_lines: null,
+      complete: false,
+      source: 'conservative-fallback',
+      warnings: [...warnings, reason],
+    })),
+    warnings: [...warnings, reason],
+  }
+}
+
+// Warnings written by the Python selector, matched by their stable leading words. Anything else could carry text
+// from an exception or the task, so it is only counted.
+const KNOWN_CONTEXT_WARNINGS = [
+  'file is missing', 'file exceeds the local read limit', 'file could not be read', 'file appears to be binary',
+  'file is not valid UTF-8 text', 'file contains an extremely long line', 'path could not be resolved safely',
+  'path escapes the project root', 'path could not be inspected', 'path is not a regular file',
+  'task and path did not fit the Laya token budget', 'a chunk did not fit the Laya token budget', 'Laya token accounting failed',
+  'chunk budget reached before complete coverage', 'time budget exhausted', 'Laya truncated chunk evidence', 'Relevance evidence was truncated',
+  'Relevance backend unavailable or invalid', 'Negative relevance answer was below the skip threshold',
+] as const
+const MAX_KNOWN_WARNING_LENGTH = 160
+
+const safeWarnings = (warnings: unknown): string[] => {
+  if (!Array.isArray(warnings)) return []
+  const known = new Set<string>()
+  let unknown = 0
+  for (const warning of warnings) {
+    if (typeof warning === 'string' && warning.length <= MAX_KNOWN_WARNING_LENGTH && !/[\r\n]/.test(warning)
+      && KNOWN_CONTEXT_WARNINGS.some(prefix => warning.startsWith(prefix))) known.add(warning)
+    else unknown++
+  }
+  return [...known, ...(unknown > 0 ? [`Local context selection returned ${unknown} other warning(s)`] : [])]
+}
+
+const boundedContextSelectionRequest = (task: string, paths: string[], options: ContextSelectionOptions = {}): {
+  request: {
+    task: string
+    paths: string[]
+    root: string
+    skip_threshold: number
+    max_file_bytes: number
+    chunk_lines: number
+    max_chunks: number
+    batch_size: number
+    head_max_len: number
+    time_budget: number
+  }
+  warnings: string[]
+} => {
+  task = requireText('task', task, true)
+  if (!Array.isArray(paths)) throw new TypeError('paths must be an array')
+  if (paths.length === 0) throw new Error(`paths must contain 1-${CONTEXT_MAX_PATHS} entries`)
+  const seen = new Set<string>()
+  const cleanPaths: string[] = []
+  paths.forEach((path, index) => {
+    const clean = requireText(`paths[${index}]`, path, true)
+    if (clean.length > RELEVANCE_LIMITS.path) throw new Error(`paths[${index}] must be at most ${RELEVANCE_LIMITS.path} characters`)
+    if (seen.has(clean)) return
+    seen.add(clean)
+    cleanPaths.push(clean)
+  })
+  if (cleanPaths.length > CONTEXT_MAX_PATHS) throw new Error(`paths must contain 1-${CONTEXT_MAX_PATHS} unique entries`)
+  const warnings: string[] = []
+  return {
+    request: {
+      task,
+      paths: cleanPaths,
+      root: options.root === undefined ? process.cwd() : requireText('root', options.root, true),
+      skip_threshold: options.skip_threshold === undefined ? CONTEXT_SELECTION_DEFAULTS.skip_threshold : requireFiniteNumber('skip_threshold', options.skip_threshold, 0.5, 1),
+      max_file_bytes: options.max_file_bytes === undefined ? CONTEXT_SELECTION_DEFAULTS.max_file_bytes : requireInteger('max_file_bytes', options.max_file_bytes, 1, 1_048_576),
+      chunk_lines: options.chunk_lines === undefined ? CONTEXT_SELECTION_DEFAULTS.chunk_lines : requireInteger('chunk_lines', options.chunk_lines, 1, 500),
+      max_chunks: options.max_chunks === undefined ? CONTEXT_SELECTION_DEFAULTS.max_chunks : requireInteger('max_chunks', options.max_chunks, 1, 64),
+      batch_size: options.batch_size === undefined ? CONTEXT_SELECTION_DEFAULTS.batch_size : requireInteger('batch_size', options.batch_size, 1, CONTEXT_MAX_PATHS),
+      head_max_len: CONTEXT_SELECTION_DEFAULTS.head_max_len,
+      time_budget: CONTEXT_SELECTION_DEFAULTS.time_budget,
+    },
+    warnings,
+  }
+}
+
+export const validateFileRelevance = (raw: unknown, fallbackPath: string, requestWarnings: string[] = []): FileRelevance => {
+  const value = raw as FileRelevance
+  if (value?.source === 'conservative-fallback') return conservativeFileRelevance(fallbackPath, requestWarnings)
+  if (!value || value.source !== 'laya' || typeof value.should_read !== 'boolean' || !['yes', 'no'].includes(value.decision ?? '')
+    || value.path !== fallbackPath || typeof value.answer_confidence !== 'number' || !Number.isFinite(value.answer_confidence)
+    || value.answer_confidence < 0 || value.answer_confidence > 1
+    || !value.relevance_probabilities || typeof value.reason !== 'string' || !Array.isArray(value.warnings)) {
+    throw new Error('Invalid local Laya relevance answer')
+  }
+  const probs = value.relevance_probabilities
+  if (Object.keys(probs).length !== 2 || !Number.isFinite(probs.yes) || !Number.isFinite(probs.no) || probs.yes < 0 || probs.yes > 1
+    || probs.no < 0 || probs.no > 1 || Math.abs(probs.yes + probs.no - 1) > 0.002
+    || probs[value.decision as 'yes' | 'no'] < Math.max(probs.yes, probs.no) - 1e-9) throw new Error('Invalid local Laya relevance distribution')
+  if (!value.should_read && (value.decision !== 'no' || probs.no < RELEVANCE_SKIP_THRESHOLD || probs.no <= probs.yes)) {
+    throw new Error('Invalid local Laya relevance skip')
+  }
+  return {
+    should_read: value.should_read,
+    decision: value.decision as 'yes' | 'no',
+    path: value.path,
+    answer_confidence: Number(value.answer_confidence),
+    relevance_probabilities: { yes: Number(probs.yes), no: Number(probs.no) },
+    reason: value.reason,
+    source: 'laya',
+    warnings: [...requestWarnings, ...value.warnings.map(String)],
+  }
+}
+
+const validateContextRanges = (ranges: unknown, totalLines: number): ContextRange[] => {
+  if (!Array.isArray(ranges)) throw new Error('Invalid context selection ranges')
+  let previousEnd = 0
+  return ranges.map(range => {
+    const value = range as ContextRange
+    if (!Number.isInteger(value?.start_line) || !Number.isInteger(value?.end_line)
+      || value.start_line < 1 || value.end_line < value.start_line || value.end_line > totalLines
+      || value.start_line <= previousEnd) throw new Error('Invalid context selection range')
+    previousEnd = value.end_line
+    return { start_line: value.start_line, end_line: value.end_line }
+  })
+}
+
+export const validateContextSelection = (raw: unknown, requestedPaths: string[], requestWarnings: string[] = []): ContextSelection => {
+  const value = raw as ContextSelection
+  if (!value || !Array.isArray(value.files) || value.files.length !== requestedPaths.length || !Array.isArray(value.warnings)) {
+    throw new Error('Invalid local Laya context selection answer')
+  }
+  const files = value.files.map((file, index) => {
+    const entry = file as ContextSelectionFile
+    if (!entry || entry.path !== requestedPaths[index] || typeof entry.should_read !== 'boolean'
+      || !Array.isArray(entry.ranges) || typeof entry.complete !== 'boolean' || !Array.isArray(entry.warnings)
+      || !['laya', 'conservative-fallback'].includes(entry.source)) {
+      throw new Error('Invalid local Laya context selection file')
+    }
+    if (entry.source === 'conservative-fallback') {
+      if (!entry.should_read) {
+        throw new Error('Invalid conservative context selection file')
+      }
+      if (entry.total_lines === null) {
+        if (entry.ranges.length !== 0 || entry.complete) throw new Error('Invalid conservative context selection file')
+        return conservativeContextSelection([entry.path], [...requestWarnings, ...safeWarnings(entry.warnings)]).files[0]
+      }
+      if (!Number.isInteger(entry.total_lines) || entry.total_lines < 0) throw new Error('Invalid conservative context selection total_lines')
+      return {
+        path: entry.path,
+        should_read: true,
+        ranges: validateContextRanges(entry.ranges, entry.total_lines),
+        total_lines: entry.total_lines,
+        complete: entry.complete,
+        source: 'conservative-fallback' as const,
+        warnings: [...requestWarnings, ...safeWarnings(entry.warnings)],
+      }
+    }
+    if (!Number.isInteger(entry.total_lines) || (entry.total_lines as number) < 0) throw new Error('Invalid context selection total_lines')
+    const ranges = validateContextRanges(entry.ranges, entry.total_lines as number)
+    if (!entry.should_read && (!entry.complete || ranges.length !== 0)) throw new Error('Invalid context selection skip')
+    return {
+      path: entry.path,
+      should_read: entry.should_read,
+      ranges,
+      total_lines: entry.total_lines as number,
+      complete: entry.complete,
+      source: 'laya' as const,
+      warnings: [...requestWarnings, ...safeWarnings(entry.warnings)],
+    }
+  })
+  return { files, warnings: [...requestWarnings, ...safeWarnings(value.warnings)] }
+}
+
 export const classifyLocal = async (task: string, phase: Phase = 'work'): Promise<Classification> => {
   const local = await ensureRuntime()
   if (local.state !== 'ready' || !local.python || !local.checkpoint) throw new Error(local.message)
@@ -180,6 +441,44 @@ export const classifyLocal = async (task: string, phase: Phase = 'work'): Promis
   if (result.status !== 0) throw new Error('Local Laya inference failed; the original model was kept.')
   try { return validateClassification(JSON.parse(result.stdout), phase) }
   catch { throw new Error('Local Laya returned an invalid answer; the original model was kept.') }
+}
+
+export const shouldReadFileLocal = async (task: string, path: string, summary = '', excerpt = ''): Promise<FileRelevance> => {
+  task = requireText('task', task, true)
+  path = requireText('path', path, true)
+  summary = requireText('summary', summary)
+  excerpt = requireText('excerpt', excerpt)
+  const { request, warnings } = boundedRelevanceRequest(task, path, summary, excerpt)
+  try {
+    const local = await ensureRuntime()
+    if (local.state !== 'ready' || !local.python || !local.checkpoint) return conservativeFileRelevance(request.path, warnings)
+    const result = spawnSync(local.python, pythonArgs(local.checkpoint), {
+      input: JSON.stringify({ operation: 'should_read_file', ...request }), encoding: 'utf8', timeout: 20_000, windowsHide: true, maxBuffer: 1_000_000,
+      env: { ...process.env, HF_HUB_OFFLINE: '1', TRANSFORMERS_OFFLINE: '1', HF_HUB_DISABLE_TELEMETRY: '1', TOKENIZERS_PARALLELISM: 'false' },
+    })
+    if (result.status !== 0) return conservativeFileRelevance(request.path, warnings)
+    try { return validateFileRelevance(JSON.parse(result.stdout), request.path, warnings) }
+    catch { return conservativeFileRelevance(request.path, warnings) }
+  } catch {
+    return conservativeFileRelevance(request.path, warnings)
+  }
+}
+
+export const selectContextLocal = async (task: string, paths: string[], options: ContextSelectionOptions = {}): Promise<ContextSelection> => {
+  const { request, warnings } = boundedContextSelectionRequest(task, paths, options)
+  try {
+    const local = await ensureRuntime()
+    if (local.state !== 'ready' || !local.python || !local.checkpoint) return conservativeContextSelection(request.paths, warnings)
+    const result = spawnSync(local.python, pythonArgs(local.checkpoint), {
+      input: JSON.stringify({ operation: 'select_context', ...request }), encoding: 'utf8', timeout: (request.time_budget + CONTEXT_PROCESS_OVERHEAD_S) * 1000, windowsHide: true, maxBuffer: 2_000_000,
+      env: { ...process.env, HF_HUB_OFFLINE: '1', TRANSFORMERS_OFFLINE: '1', HF_HUB_DISABLE_TELEMETRY: '1', TOKENIZERS_PARALLELISM: 'false' },
+    })
+    if (result.status !== 0) return conservativeContextSelection(request.paths, warnings)
+    try { return validateContextSelection(JSON.parse(result.stdout), request.paths, warnings) }
+    catch { return conservativeContextSelection(request.paths, warnings) }
+  } catch {
+    return conservativeContextSelection(request.paths, warnings)
+  }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1] && process.argv[2] === '--install') await installRuntime()

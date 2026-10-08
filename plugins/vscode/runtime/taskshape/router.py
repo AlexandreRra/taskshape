@@ -18,6 +18,10 @@ def task_hash(task: str) -> str:
     return hashlib.sha256(task.encode()).hexdigest()[:16]
 
 
+class StateUsageError(RuntimeError):
+    """Laya's token accounting could not run (its private API changed or broke); distinct from a truncated state."""
+
+
 def questions_for(phase: str, head_max_len: int = DEFAULT_HEAD_MAX_LEN) -> dict:
     options = shapes_for(phase)
     return {"shape": {"type": "choice", "instructions": INSTRUCTIONS,
@@ -68,6 +72,41 @@ class LayaBackend:
     def predict(self, state: dict, questions: dict, head_max_len: int | None = None) -> dict:
         kwargs = {"head_max_len": head_max_len} if head_max_len else {}
         return self.agent.predict(state, questions, **kwargs)
+
+    def predict_batch(self, states: list[dict], questions: dict, head_max_len: int | None = None,
+                      batch_size: int | None = None) -> list[dict]:
+        kwargs = {}
+        if head_max_len:
+            kwargs["head_max_len"] = head_max_len
+        if batch_size:
+            kwargs["batch_size"] = batch_size
+        return self.agent.predict_batch(states, questions, **kwargs)
+
+    def state_usage(self, state: dict, questions: dict, head_max_len: int | None = None) -> dict:
+        """Return Laya's actual token budget accounting for a state without running inference.
+
+        Raises StateUsageError when the accounting itself fails, so callers can tell that apart from truncation.
+        """
+        ids = list(questions.keys())
+        try:
+            stats = self._encode_stats(state, ids, questions, head_max_len)
+            dropped = max((s["state_tokens_dropped"] for s in stats), default=0)
+            return {
+                "state_tokens": stats[0]["state_tokens"] if stats else 0,
+                "state_tokens_dropped": dropped,
+                "truncated": dropped > 0,
+                "truncated_questions": [qid for qid, s in zip(ids, stats) if s["truncated"]],
+            }
+        except Exception as exc:  # the private Laya API can fail in any way; name the type only, never the task text
+            raise StateUsageError("Laya token accounting unavailable: %s" % type(exc).__name__) from exc
+
+    def _encode_stats(self, state: dict, ids: list[str], questions: dict, head_max_len: int | None) -> list[dict]:
+        """The only place that touches Laya's private Agent methods (_check_question, _to_internal, _encode_state)."""
+        for qid in ids:
+            self.agent._check_question(qid, questions[qid])
+        internal = {qid: self.agent._to_internal(questions[qid]) for qid in ids}
+        items = self.agent._encode_state(state, ids, internal, head_max_len=head_max_len)
+        return [item["state_stats"] for item in items]
 
 
 @dataclass

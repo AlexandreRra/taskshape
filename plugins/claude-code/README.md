@@ -44,6 +44,16 @@ With the default `laya` backend, the plugin prepares local runtime assets when c
 
 The large model file is about 650 MB, and the Python/PyTorch runtime can use several GB of disk. First setup needs network, disk space, and time. POSIX hosts need `sh`, `tar`, `curl` or `wget`, and a SHA-256 helper such as `sha256sum`, `shasum`, or `openssl`. Windows hosts need PowerShell and `tar`. While setup is still running, unsupported, or failed, Claude keeps the original launch and the plugin reports that routing was unavailable. Later classification runs locally in a short-lived Python process over stdin, with no server port, no provider call, and offline Hugging Face/Transformers settings. The default checkpoint is not a task-specialized fine-tune; no task-specialized checkpoint has passed the adoption gate yet.
 
+## Local context selection
+
+The bundled `select-context` skill lets the agent ask managed local Laya to inspect candidate files before loading them into model context. It sends the task and up to 20 repository-relative paths to `hooks/runtime-cli.ts select-context` through the existing launcher. The runtime reads local text files and returns only file decisions, line ranges when available, line counts, source, completeness, and sanitized warnings.
+
+Default options are ready to use: the current project directory is the root, `skip_threshold` is `0.95`, `max_file_bytes` is `262144`, `chunk_lines` is `80`, `max_chunks` is `64` across the request, and `batch_size` is `8`. Advanced callers can include those fields in the JSON sent to the launcher.
+
+Uncertainty, incomplete coverage, unsupported files, path validation failures, or an unavailable runtime recommend reading conservatively. This query uses managed Laya independently of the model-routing backend setting. It is skill-guided and advisory; it does not intercept or block every file read. The agent can read explicitly requested files or files needed for correctness even after a negative answer.
+
+The older metadata-only check remains available through `hooks/runtime-cli.ts should-read-file`. It sends a task, path, and optional summary or excerpt; it does not open the candidate file.
+
 ## Options
 
 | Option | Default | Meaning |
@@ -71,14 +81,14 @@ The large model file is about 650 MB, and the Python/PyTorch runtime can use sev
 
 ## Python and MCP tools
 
-The Python package is optional for this plugin. Use it when you want CLI routing, records, reports, MCP tools, or lab workflows:
+The Python package is optional for this plugin. Use it when you want CLI routing, records, reports, MCP tools, local `select-context`, or lab workflows:
 
 ```bash
 pip install -e ".[mcp,laya]"
 claude mcp add taskshape -- taskshape-mcp --profiles catalog/profiles.example.json --catalog catalog/models.json --backend heuristic
 ```
 
-The lab can fine-tune and evaluate local Laya checkpoints from labelled briefs. Adopted checkpoints are consumed by the Python CLI/MCP path; the plugin's default managed runtime uses the pinned public multilingual Laya base checkpoint.
+The MCP server exposes `select_context` and `should_read_file` when configured with a local Laya checkpoint. The lab can fine-tune and evaluate local Laya checkpoints from labelled briefs. Adopted checkpoints are consumed by the Python CLI/MCP path; the plugin's default managed runtime uses the pinned public multilingual Laya base checkpoint.
 
 ## Tests
 

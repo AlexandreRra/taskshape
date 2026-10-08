@@ -16,8 +16,10 @@ A routing request follows the same policy path across the CLI, MCP server, and h
 
 The main entrypoints are:
 
-- [src/taskshape/cli.py](../src/taskshape/cli.py): `route`, `validate`, `record`, `report`, and `lab`.
+- [src/taskshape/cli.py](../src/taskshape/cli.py): `route`, `select-context`, `should-read-file`, `validate`, `record`, `report`, and `lab`.
 - [src/taskshape/router.py](../src/taskshape/router.py): classifier selection and route result shape.
+- [src/taskshape/context_selection.py](../src/taskshape/context_selection.py): local file reading, chunking, and range selection for candidate context.
+- [src/taskshape/relevance.py](../src/taskshape/relevance.py): metadata-only binary file-read recommendation.
 - [src/taskshape/policy.py](../src/taskshape/policy.py): profile filtering and selection.
 - [src/taskshape/mcp_server.py](../src/taskshape/mcp_server.py): local stdio MCP tools.
 - [plugins/shared](../plugins/shared): shared Copilot CLI and VS Code hook implementation.
@@ -59,9 +61,52 @@ On first use, the plugin runtime prepares local assets in the taskshape home dir
 
 The large model file is about 650 MB. PyTorch and the managed Python environment can bring total disk use to several GB. First setup needs network and disk space and may still be running when the first routed launch occurs. `SessionStart` reports setup state on stderr for Copilot CLI and VS Code; VS Code also receives the status as `additionalContext`. Claude Code reports runtime failures through the function hook status and toast path.
 
-After setup, classification is local. The plugins start a short-lived Python process, pass the task and phase over stdin, run with offline Hugging Face and Transformers settings, and read JSON from stdout. They do not open a server port, call model providers, or write task prompts/descriptions to decision audit fields.
+After setup, classification and context selection are local. The plugins start a short-lived Python process, pass JSON over stdin, run with offline Hugging Face and Transformers settings, and read JSON from stdout. They do not open a server port, call model providers, or write task prompts/descriptions to decision audit fields.
 
 If Node or Laya setup is unsupported, installing, or fails at classification time, plugin routing is skipped and the original host launch is kept. Once the TypeScript hook can run, classifier failures are logged as skipped decisions. During Node bootstrap, there may be only stderr/status output. The plugin does not fall back to the heuristic backend unless the user explicitly configured the heuristic backend.
+
+## Local context selection
+
+`select_context(task, paths, root=".", ...)` is independent of model routing. It reads candidate files locally under the project root, splits text into bounded line chunks, asks Laya which chunks matter for the task, and returns only file decisions and line ranges when available. The returned schema is:
+
+```json
+{
+  "files": [
+    {
+      "path": "src/auth/session.ts",
+      "should_read": true,
+      "ranges": [{"start_line": 1, "end_line": 80}],
+      "total_lines": 120,
+      "complete": true,
+      "source": "laya",
+      "warnings": []
+    }
+  ],
+  "warnings": []
+}
+```
+
+Responses never include raw task text, file contents, excerpts, or backend exception text. They include sanitized warnings only. The default options are tuned for plug-and-play use: project root from the caller, `skip_threshold: 0.95`, `max_file_bytes: 262144`, `chunk_lines: 80`, `max_chunks: 64` across the whole request, `batch_size: 8`, and at most 20 paths per request. Advanced callers can pass those flat options through the CLI, MCP tool, or plugin runtime JSON.
+
+Path handling is defensive. Candidates must stay under the project root; escapes, symlinks outside the root, binary files, oversized files, missing files, and read errors fail open for that file. Incomplete coverage also fails open by recommending the file instead of trusting a partial negative. `max_chunks` is global across the request, so a large candidate set is conservative when the chunk budget runs out.
+
+Laya receives the task and candidate chunks as untrusted data. A negative answer can skip a file only after complete coverage and a strictly winning negative probability at or above the skip threshold. Strong positives and uncertain negatives are retained. When Laya is unavailable, invalid, or raises during prediction, affected candidates retain `should_read: true`, `source: "conservative-fallback"`, and warnings. Local line counts, ranges, and coverage metadata are preserved when available; when the runtime cannot establish local file metadata, the result uses `total_lines: null`, empty ranges, and `complete: false`.
+
+The Python CLI exposes this as `taskshape select-context`. The MCP tool is named `select_context`; when `root` is omitted, it uses the server's default project root. The MCP service reuses its lazy-loaded Laya backend across routing, context selection, and file relevance requests, so a long-running MCP server keeps the backend warm.
+
+The managed plugin runtime accepts a `select_context` operation in the bundled Python classifier and exposes it through `runtime-cli.ts select-context`. Plugin calls use one Python/Laya process per request and classify chunks in batches inside that request; the MVP does not run a persistent plugin daemon or cache context decisions. Copilot CLI, VS Code, and Claude Code install a `select-context` skill that uses the managed runtime by default, so the common plugin path needs no Python package, MCP registration, or user-supplied checkpoint.
+
+## File relevance query
+
+`should_read_file(task, path, summary="", excerpt="")` is the older metadata-only query. It asks the same Laya backend a binary `relevance` question with `yes` and `no` criteria. Candidate paths, summaries, and excerpts are supplied data; the query never opens files or walks the repository. Prefer `select_context` when Taskshape should inspect local files itself.
+
+The classifier distribution is validated with the router's existing answer validator. `should_read` is false only for a strictly winning negative answer with probability at least 0.8. A weaker negative still returns `decision: "no"`, but recommends reading with a warning. An unavailable or invalid classifier returns `should_read: true`, `source: "conservative-fallback"`, and null classifier decision/confidence/probabilities. Backend exception text is not exposed because it may contain task or file content. The shape heuristic is never used as a file-relevance classifier.
+
+Inputs are capped at 4,000 task characters, 1,000 path characters, 2,000 summary characters, and 4,000 excerpt characters, with explicit truncation warnings. These character bounds limit input size; the checkpoint's token context also limits what Laya can consider. Responses do not echo task, summary, or excerpt, and queries do not write model-routing audit records.
+
+The Python CLI and MCP tool expose the query with a configured local checkpoint. The bundled runtime accepts a `should_read_file` operation over stdin, exposed by `runtime-cli.ts should-read-file`. Copilot CLI and VS Code ship a `file-relevance` skill that uses that launcher, or the MCP tool when available. The skill and runtime copies are checked by `scripts/sync-shared.py --check`. No additional managed runtime dependency is needed.
+
+The agent chooses when to ask and can override a negative recommendation when the user requests a file or correctness needs it. Read hooks remain outside this feature: installing Taskshape does not automatically intercept every file read. The base checkpoint is not fine-tuned for file relevance or context selection; the thresholds are conservative policy, not evidence of calibrated accuracy or verified token savings. Quality evaluation and fine-tuning remain future work.
 
 ## Profile policy
 
@@ -131,7 +176,7 @@ The repository ships three host integrations plus the MCP server.
 | [Claude Code plugin](../plugins/claude-code/README.md) | Function hook on `Agent` | Managed local Laya runtime; explicit heuristic option. | Rewrites the Claude model alias when the selected model maps to `haiku`, `sonnet`, `opus`, or `fable`; explicit models are kept by default; forks are skipped. | Keeps the original launch and reports status/toast. | Accepted when the tool call did not error; seconds recorded. |
 | [Copilot CLI plugin](../plugins/copilot/README.md) | `preToolUse` on `task` | Managed local Laya runtime; explicit heuristic option. | Emits `permissionDecision: "allow"` with `modifiedArgs.model` and, when non-default, `modifiedArgs.reasoning_effort`; explicit models are kept by default. | Keeps the original launch and records a skipped decision. | `subagentStop` records `accepted` from `stopReason === "end_turn"`. |
 | [VS Code plugin](../plugins/vscode/README.md) | `PreToolUse` on `runSubagent` | Managed local Laya runtime; explicit heuristic option. | Emits `hookSpecificOutput.updatedInput.model` using VS Code model display names; named agents and explicit models are skipped by default; profiles are capped by the session model multiplier, with a 1x ceiling if the main model is unknown. | Keeps the original launch and records a skipped decision. | `SubagentStop` records `accepted: null` because no stop reason is exposed. |
-| MCP server | Local stdio tools | Python `--backend auto`; heuristic unless checkpoint/config is supplied. | No host rewrite by itself; clients call `route`, `record`, `report`, or `policy_table`. | Client-defined. | Client-defined through `record`. |
+| MCP server | Local stdio tools | Python `--backend auto`; heuristic unless checkpoint/config is supplied. | No host rewrite by itself; clients call `route`, `select_context`, `should_read_file`, `record`, `report`, or `policy_table`. | Context selection and relevance recommend reading conservatively; routing behavior is client-defined. | Client-defined through `record`. |
 
 The Copilot CLI and VS Code plugins share hook scripts under [plugins/shared](../plugins/shared). They can optionally refresh a local model catalog through the Copilot CLI ACP server, cache it in `~/.taskshape/models.json`, and filter out profiles whose models are unavailable. If discovery fails, the hooks use the cached catalog when possible or the shipped table otherwise.
 

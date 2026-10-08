@@ -73,6 +73,14 @@ At session start, and once a day after that, the hook can ask the Copilot CLI AC
 
 If discovery is missing or fails, routing uses the last good cached catalog when possible or the shipped model information otherwise. Set `discoverModels` to `false` to disable refreshes. Set `copilot` to another CLI executable when needed: it is a single executable name or path (no arguments), resolved through PATH and PATHEXT on Windows, and is not started through a shell. `TASKSHAPE_DISCOVERY_TIMEOUT_MS` bounds discovery time.
 
+## Local context selection
+
+The bundled `select-context` skill lets the agent ask managed local Laya to inspect candidate files before loading them into model context. It sends the task and up to 20 repository-relative paths to `hooks/runtime-cli.ts select-context` through the existing launcher. The runtime reads local text files and returns only file decisions, line ranges when available, line counts, source, completeness, and sanitized warnings. See the [query example](../copilot/README.md#local-context-selection).
+
+Defaults are ready to use: the current project directory is the root, `skip_threshold` is `0.95`, `max_file_bytes` is `262144`, `chunk_lines` is `80`, `max_chunks` is `64` across the request, and `batch_size` is `8`. Uncertainty, incomplete coverage, unsupported files, path validation failures, or runtime failure recommends reading. The query uses Laya independently of the routing backend setting. The skill is advisory and selected by the agent; it does not intercept or block every read. Read explicitly requested files and evidence needed for correctness even after a negative answer.
+
+The Python MCP server exposes the same `select_context` tool when configured separately with a local Laya checkpoint. Installing this plugin does not automatically register that server. The older `file-relevance` skill remains available for metadata-only `should-read-file` checks that do not open the candidate file.
+
 ## What VS Code lets a hook do
 
 - `runSubagent` uses display names such as `"Model Name (copilot)"`, so the profiles file maps provider model ids to VS Code display names.

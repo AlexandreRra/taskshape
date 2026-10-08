@@ -40,6 +40,24 @@ The `sessionStart` hook starts managed runtime setup in the background when the 
 
 The large model file is about 650 MB, and the Python/PyTorch runtime can use several GB of disk. First setup needs network, disk space, and time. POSIX hosts need `sh`, `tar`, `curl` or `wget`, and a SHA-256 helper such as `sha256sum`, `shasum`, or `openssl`. Windows hosts need PowerShell and `tar`. If setup is still running or fails, the plugin keeps the original Copilot launch. Once the TypeScript hook can run, classifier failures are logged as skipped routing decisions. During Node bootstrap, the visible evidence may only be stderr/status text. Later classification runs locally in a short-lived Python process over stdin, with no server port, no provider call, and offline Hugging Face/Transformers settings. The default checkpoint is not a task-specialized fine-tune; no task-specialized checkpoint has passed the adoption gate yet.
 
+## Local context selection
+
+The bundled `select-context` skill lets the agent ask managed local Laya to inspect candidate files before loading them into model context. It sends the task and up to 20 repository-relative paths to the existing runtime, which reads local text files and returns only file decisions, line ranges when available, line counts, source, completeness, and sanitized warnings.
+
+The skill calls `hooks/runtime-cli.ts select-context` through the existing launcher, sending JSON on stdin:
+
+```bash
+sh /absolute/plugin/root/hooks/launch.sh runtime-cli.ts select-context <<'JSON'
+{"task":"Fix login session expiry","paths":["src/auth/session.ts","src/billing/invoices.ts"]}
+JSON
+```
+
+On Windows, use `hooks/launch.ps1` with the same arguments and JSON on stdin. Defaults are ready to use: `root` is the current project directory, `skip_threshold` is `0.95`, `max_file_bytes` is `262144`, `chunk_lines` is `80`, `max_chunks` is `64` across the request, and `batch_size` is `8`. Advanced callers can include those fields in the JSON.
+
+Uncertainty, incomplete coverage, unsupported files, path validation failures, or an unavailable runtime recommend reading conservatively. This query uses managed Laya independently of the model-routing backend setting. It is skill-guided and advisory; it does not intercept or block every file read. The agent can read explicitly requested files or files needed for correctness even after a negative answer. The Python MCP server also exposes `select_context` when configured separately with a Laya checkpoint; the plugin does not automatically register that server.
+
+The older `file-relevance` skill remains available for metadata-only checks. It sends a task, path, and optional summary or excerpt to `hooks/runtime-cli.ts should-read-file`; it does not open the candidate file.
+
 ## Configuration
 
 Environment variables override the config file.
