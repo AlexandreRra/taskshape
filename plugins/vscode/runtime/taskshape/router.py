@@ -95,6 +95,8 @@ class Decision:
 def validate_answer(answer: dict, options: list[str]) -> dict:
     """Reject anything that is not a finite distribution over exactly the offered shapes."""
     import math
+    if not isinstance(answer, dict):
+        raise ValueError("Answer must be an object")
     probabilities = answer.get("probabilities")
     if not isinstance(probabilities, dict) or set(probabilities) != set(options):
         raise ValueError("Answer does not cover the offered shapes")
@@ -119,11 +121,12 @@ def route(task: str, profiles: list[dict], phase: str = "work", max_cost_tier: i
     try:
         answer = validate_answer(backend.predict(state_for(task, phase, context), questions, head_max_len)["answers"]["shape"], options)
         source = getattr(backend, "name", type(backend).__name__)
-    except (KeyError, TypeError, ValueError, RuntimeError, OSError) as exc:
+    except (AttributeError, KeyError, TypeError, ValueError, RuntimeError, OSError) as exc:
         # The classifier failed or lied: fall back to the rubric and say so; never fail the route silently.
         answer = HeuristicBackend().predict(state_for(task, phase, context), questions)["answers"]["shape"]
         source = "heuristic-fallback"
-        warnings.append("Backend unavailable or invalid; rubric used: " + str(exc)[:200])
+        # Name the exception type only: its text may quote the private task and warnings reach the audit log.
+        warnings.append("Backend unavailable or invalid; rubric used: " + type(exc).__name__)
     if answer["answer_confidence"] < low_confidence:
         warnings.append("Low shape confidence %.2f; policy still applied" % answer["answer_confidence"])
     choice = choose(answer["choice"], profiles, phase, max_cost_tier, allowed)
