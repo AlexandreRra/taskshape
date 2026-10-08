@@ -12,3 +12,6 @@ records/
 .hub/
 # engine-generated editor types inside plugin folders
 plugins/*/.claude-plugin/types/
+# agent-orchestration state (oh-my-claudecode, oh-my-codex)
+.omc/
+.omx/
