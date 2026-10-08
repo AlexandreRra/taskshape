@@ -7,7 +7,7 @@ from .shapes import PHASES
 
 MAX_FILE_BYTES = 4 * 1024 * 1024
 MODEL_FIELDS = {"id", "provider", "positioning"}
-PROFILE_FIELDS = {"id", "model", "effort", "capability", "cost_tier"}
+PROFILE_FIELDS = {"id", "model", "capability", "cost_tier"}
 
 
 def _read(path) -> dict:
@@ -60,6 +60,9 @@ def load_profiles(path, models: dict | None = None) -> dict:
         if profile["id"] in seen:
             raise ValueError("Duplicate profile id: %s" % profile["id"])
         seen.add(profile["id"])
+        profile.setdefault("effort", "default")
+        if not isinstance(profile["effort"], str) or not profile["effort"]:
+            raise ValueError("effort must be a non-empty string: %s" % profile["id"])
         for key, low, high in (("capability", 0, 4), ("cost_tier", 0, 5)):
             v = profile[key]
             if isinstance(v, bool) or not isinstance(v, int) or not low <= v <= high:

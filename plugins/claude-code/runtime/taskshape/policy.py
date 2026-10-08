@@ -44,7 +44,7 @@ def choose(shape: str, profiles: list[dict], phase: str = "work", max_cost_tier:
         pick = min(adequate, key=lambda p: (p["cost_tier"], -p["capability"], p["id"]))
         return Choice(pick, "cheapest profile whose capability %d covers %s (needs %d)" % (pick["capability"], shape, required),
                       considered=considered)
-    pick = max(within, key=lambda p: (p["capability"], -p["cost_tier"], p["id"]))
+    pick = min(within, key=lambda p: (-p["capability"], p["cost_tier"], p["id"]))
     return Choice(pick, "most capable profile within the budget; none reaches capability %d" % required,
                   warnings=["under-provisioned: %s needs capability %d, %s has %d" % (shape, required, pick["id"], pick["capability"])],
                   considered=considered)
