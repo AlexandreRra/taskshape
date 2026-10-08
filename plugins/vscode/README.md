@@ -71,7 +71,7 @@ Environment variables override the config file.
 
 At session start, and once a day after that, the hook can ask the Copilot CLI ACP server which models the account offers. This needs the Copilot CLI on the PATH VS Code sees; VS Code's bundled engine is not a CLI. The result is cached in `~/.taskshape/models.json`, including display names and usage multipliers when available.
 
-If discovery is missing or fails, routing uses the last good cached catalog when possible or the shipped model information otherwise. Set `discoverModels` to `false` to disable refreshes. Set `copilot` to another CLI executable when needed. `TASKSHAPE_DISCOVERY_TIMEOUT_MS` bounds discovery time.
+If discovery is missing or fails, routing uses the last good cached catalog when possible or the shipped model information otherwise. Set `discoverModels` to `false` to disable refreshes. Set `copilot` to another CLI executable when needed: it is a single executable name or path (no arguments), resolved through PATH and PATHEXT on Windows, and is not started through a shell. `TASKSHAPE_DISCOVERY_TIMEOUT_MS` bounds discovery time.
 
 ## What VS Code lets a hook do
 

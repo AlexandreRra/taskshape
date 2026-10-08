@@ -59,7 +59,7 @@ Environment variables override the config file.
 
 On session start, and once a day after that, the hook asks the Copilot CLI ACP server which models the account offers. It caches the result in `~/.taskshape/models.json`, including display names and usage multipliers when available. Routing then filters out profiles whose models are unavailable.
 
-If discovery is missing or fails, routing uses the last good cached catalog when possible or the shipped model information otherwise. Set `discoverModels` to `false` to disable refreshes. Set `copilot` to another CLI executable when needed. `TASKSHAPE_DISCOVERY_TIMEOUT_MS` bounds discovery time.
+If discovery is missing or fails, routing uses the last good cached catalog when possible or the shipped model information otherwise. Set `discoverModels` to `false` to disable refreshes. Set `copilot` to another CLI executable when needed: it is a single executable name or path (no arguments), resolved through PATH and PATHEXT on Windows, and is not started through a shell. `TASKSHAPE_DISCOVERY_TIMEOUT_MS` bounds discovery time.
 
 ## Profiles
 

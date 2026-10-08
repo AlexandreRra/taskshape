@@ -11,7 +11,7 @@ import {
   CATALOG_RETRY, CATALOG_TTL, DEFAULT_CONFIG, type Decide, applyCatalog, catalogFresh, detectHarness, ensureConfig, loadProfilesFrom,
   localCandidates, multiplierCeiling, outcomeFor, parseAcpModels, parseConfig, popPending, routeClassified, routeEmbedded, vscodeModelName, writeJson,
 } from './harness.ts'
-import { discoverModels } from './discover.ts'
+import { discoverModels, resolveSpawn } from './discover.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const profilesPath = [join(here, '..', 'profiles.copilot.json'), join(here, 'profiles.copilot.json')].find(p => existsSync(p)) as string
@@ -428,6 +428,28 @@ exec "${process.execPath}" "$@"
     assets: `# platform\tversion\tfilename\tsha256\n${platform}\t${version}\t${filename}\t${createHash('sha256').update(archive).digest('hex')}\n`,
   }
 }
+
+test('discovery starts the Copilot CLI without a shell: PATH/PATHEXT resolution, quoted cmd.exe only for .cmd shims', () => {
+  const present = (...files: string[]) => (file: string) => files.includes(file)
+  const win = (extra: Record<string, unknown> = {}) => ({ platform: 'win32', path: 'C:\\Windows;C:\\Users\\me\\bin', pathext: '.COM;.EXE;.BAT;.CMD', comspec: 'C:\\Windows\\System32\\cmd.exe', ...extra })
+  // not Windows: untouched
+  assert.deepEqual(resolveSpawn('copilot', ['--acp'], { platform: 'linux' }), { command: 'copilot', args: ['--acp'] })
+  // an .exe on PATH runs directly
+  assert.deepEqual(resolveSpawn('copilot', ['--acp'], win({ exists: present('C:\\Users\\me\\bin\\copilot.EXE') })), { command: 'C:\\Users\\me\\bin\\copilot.EXE', args: ['--acp'] })
+  // PATHEXT order decides between an .exe and a .cmd shim in different folders: the first folder wins
+  assert.deepEqual(resolveSpawn('copilot', ['--acp'], win({ exists: present('C:\\Windows\\copilot.CMD', 'C:\\Users\\me\\bin\\copilot.EXE') })),
+    { command: 'C:\\Windows\\System32\\cmd.exe', args: ['/d', '/s', '/c', '""C:\\Windows\\copilot.CMD" "--acp""'], windowsVerbatimArguments: true })
+  // a configured full path with spaces, extension included
+  assert.deepEqual(resolveSpawn('C:\\Program Files\\npm\\copilot.cmd', ['--acp'], win({ exists: present('C:\\Program Files\\npm\\copilot.cmd') })),
+    { command: 'C:\\Windows\\System32\\cmd.exe', args: ['/d', '/s', '/c', '""C:\\Program Files\\npm\\copilot.cmd" "--acp""'], windowsVerbatimArguments: true })
+  // a full path without extension resolves through PATHEXT
+  assert.equal((resolveSpawn('C:\\tools\\copilot', ['--acp'], win({ exists: present('C:\\tools\\copilot.EXE') })) as { command: string }).command, 'C:\\tools\\copilot.EXE')
+  // not found: spawn reports ENOENT itself, still without a shell
+  assert.deepEqual(resolveSpawn('copilot', ['--acp'], win({ exists: present() })), { command: 'copilot', args: ['--acp'] })
+  // shell metacharacters in a configured shim path are refused rather than quoted
+  const evil = 'C:\\x\\a&calc.cmd'
+  assert.match((resolveSpawn(evil, ['--acp'], win({ exists: present(evil) })) as { error: string }).error, /cannot be started through cmd\.exe safely/)
+})
 
 test('end to end: the scripts answer both harnesses exactly as the hooks expect', () => {
   const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))

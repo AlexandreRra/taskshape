@@ -3,6 +3,8 @@
 // a catalog without models, which leaves the shipped profile table in charge. The server exits on stdin EOF (about
 // 0.7 s after answering); the process group is killed as well in case it does not.
 import { spawn, type ChildProcess } from 'node:child_process'
+import { existsSync, statSync } from 'node:fs'
+import { win32 } from 'node:path'
 import { type Catalog, type Config, acquireLock, catalogFresh, parseAcpModels, readCatalog, releaseLock, writeCatalog } from './harness.ts'
 
 export type DiscoverOptions = { command?: string; cwd?: string; timeoutMs?: number }
@@ -11,6 +13,41 @@ export const DISCOVERY_TIMEOUT_MS = 7000
 
 const INITIALIZE = { jsonrpc: '2.0', id: 1, method: 'initialize',
   params: { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } } } }
+
+export type SpawnEnv = { platform?: string; path?: string; pathext?: string; comspec?: string; exists?: (file: string) => boolean }
+export type SpawnPlan = { command: string; args: string[]; windowsVerbatimArguments?: boolean }
+
+const isFile = (file: string): boolean => {
+  try { return existsSync(file) && statSync(file).isFile() } catch { return false }
+}
+
+/**
+ * How to start `command args` without `shell: true`. Elsewhere the command is spawned as is. On Windows it is resolved the way
+ * the shell would (PATH, then PATHEXT): an .exe/.com runs directly; an npm-style .cmd/.bat shim cannot be spawned without a
+ * shell (Node refuses it), so it runs through `cmd.exe /d /s /c` with the path quoted and the arguments passed verbatim.
+ * Returns an error text for a name that cannot be quoted safely for cmd.exe.
+ */
+export const resolveSpawn = (command: string, args: string[], env: SpawnEnv = {}): SpawnPlan | { error: string } => {
+  const platform = env.platform ?? process.platform
+  if (platform !== 'win32') return { command, args }
+  const exists = env.exists ?? isFile
+  const exts = (env.pathext ?? process.env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)
+  const hasDir = /[\\/:]/.test(command)
+  const dirs = hasDir ? [''] : (env.path ?? process.env.PATH ?? '').split(';').filter(Boolean)
+  const names = exts.some(ext => command.toLowerCase().endsWith(ext.toLowerCase())) ? [command, ...exts.map(ext => command + ext)] : exts.map(ext => command + ext)
+  let found: string | undefined
+  for (const dir of dirs) {
+    for (const name of names) {
+      const candidate = dir ? win32.join(dir, name) : name
+      if (exists(candidate)) { found = candidate; break }
+    }
+    if (found) break
+  }
+  if (!found) return { command, args } // let spawn report ENOENT
+  if (!/\.(cmd|bat)$/i.test(found)) return { command: found, args }
+  if (/["%^&|<>\r\n]/.test(found) || args.some(arg => !/^[\w.=:/\\-]+$/.test(arg))) return { error: `${found}: cannot be started through cmd.exe safely` }
+  return { command: env.comspec ?? process.env.ComSpec ?? 'cmd.exe', args: ['/d', '/s', '/c', `"${[found, ...args].map(part => `"${part}"`).join(' ')}"`], windowsVerbatimArguments: true }
+}
 
 export const discoverModels = (opts: DiscoverOptions = {}): Promise<Catalog> => new Promise(resolve => {
   const command = opts.command || 'copilot'
@@ -35,8 +72,13 @@ export const discoverModels = (opts: DiscoverOptions = {}): Promise<Catalog> => 
   }
   timer = setTimeout(() => { kill(); finish({}, `${command} --acp did not answer within ${timeoutMs} ms`) }, timeoutMs)
   try {
-    child = spawn(command, ['--acp'], { cwd: opts.cwd, stdio: ['pipe', 'pipe', 'ignore'],
-      detached: process.platform !== 'win32', shell: process.platform === 'win32', windowsHide: true })
+    const plan = resolveSpawn(command, ['--acp'])
+    if ('error' in plan) {
+      finish({}, plan.error)
+      return
+    }
+    child = spawn(plan.command, plan.args, { cwd: opts.cwd, stdio: ['pipe', 'pipe', 'ignore'],
+      detached: process.platform !== 'win32', windowsVerbatimArguments: plan.windowsVerbatimArguments, windowsHide: true })
   } catch (error) {
     finish({}, String(error))
     return
