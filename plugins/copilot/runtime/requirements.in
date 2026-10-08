@@ -1,0 +1,18 @@
+# Runtime dependencies for the default bundled Laya classifier.
+# Python: 3.12+.
+# Resolve/install with uv and an explicit CPU torch backend on non-macOS targets to avoid CUDA wheels:
+#   uv pip compile runtime/requirements.in --universal --python-version 3.12 --generate-hashes --only-binary :all: --torch-backend cpu --emit-index-url --emit-build-options -o runtime/requirements.lock
+#   uv pip install --python <python> --require-hashes --only-binary :all: --torch-backend cpu -r runtime/requirements.lock  # Linux/Windows
+#   uv pip install --python <python> --require-hashes --only-binary :all: -r runtime/requirements.lock                      # macOS
+--only-binary=:all:
+
+laya==0.4.0
+transformers==5.18.0
+huggingface-hub==1.33.0
+safetensors==0.8.0
+numpy==2.5.3
+# PyTorch CPU wheels: broad Py3.12 CPU support on Linux/Windows x64/Linux arm64 via 2.11.0+cpu;
+# Windows arm64 needs 2.14.1+cpu; macOS arm64 uses PyPI's non-CUDA macOS wheel.
+torch==2.11.0+cpu ; sys_platform != "darwin" and (sys_platform != "win32" or platform_machine != "ARM64")
+torch==2.14.1+cpu ; sys_platform == "win32" and platform_machine == "ARM64"
+torch==2.11.0 ; sys_platform == "darwin"

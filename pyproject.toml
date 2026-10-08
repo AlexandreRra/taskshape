@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=78.1.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "taskshape"
-version = "0.1.0"
+version = "0.2.0"
 description = "Cost-aware model routing: classify the shape of a task with Laya, pick the cheapest adequate model from a policy table."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -32,3 +32,6 @@ Homepage = "https://github.com/AlexandreRra/taskshape"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+taskshape = ["data/*.json"]

@@ -202,3 +202,19 @@ class CliTests(unittest.TestCase):
             code = cli.main(["route", "--profiles", str(PROFILES), "--backend", "heuristic", "--task", "x", "--allowed", "nope"])
         self.assertEqual(code, 1)
         self.assertIn("unknown profiles", err.getvalue())
+
+    def test_route_accepts_task_stdin(self):
+        import contextlib
+        import io
+        from taskshape import cli
+
+        old_stdin = sys.stdin
+        sys.stdin = io.StringIO("Fix the typo in README")
+        out = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out):
+                code = cli.main(["route", "--profiles", str(PROFILES), "--backend", "heuristic", "--task-stdin"])
+        finally:
+            sys.stdin = old_stdin
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out.getvalue())["shape"], "routine")

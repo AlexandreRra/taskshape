@@ -1,7 +1,7 @@
 import type { EngineInterface, Register } from 'claude-code'
 import { classify } from './rubric.ts'
 import { type Budgets, type Profile, DEFAULT_BUDGETS, DEFAULT_PROFILES, choose, validateProfiles } from './policy.ts'
-import type { Phase, Shape } from './shapes.ts'
+import { type Phase, type Shape, SHAPES } from './shapes.ts'
 
 // Claude Code's Agent tool takes a model alias, not a full id, and no effort field.
 type Alias = 'sonnet' | 'opus' | 'haiku' | 'fable'
@@ -20,6 +20,8 @@ export type Decision = {
 }
 
 type Loaded = { profiles: Profile[]; budgets: Budgets; source: string; warning?: string }
+type Backend = 'laya' | 'heuristic'
+type ClassifyResult = { shape: Shape; answer_confidence: number; source: string }
 
 const RUBRIC_CONFIDENCE = 0.7
 const BUILTIN: Loaded = { profiles: DEFAULT_PROFILES, budgets: DEFAULT_BUDGETS, source: 'built-in' }
@@ -38,13 +40,41 @@ export const aliasFor = (model: string): Alias | undefined => {
 }
 
 export const routeEmbedded = (task: string, phase: Phase, loaded: Loaded, budget: string): Decision => {
-  const cap = loaded.budgets[budget]?.max_cost_tier ?? loaded.budgets.default?.max_cost_tier ?? 5
   const shape = classify(task, phase)
+  return decisionFromShape(shape, RUBRIC_CONFIDENCE, 'rubric', phase, loaded, budget)
+}
+
+const decisionFromShape = (shape: Shape, confidence: number, source: string, phase: Phase, loaded: Loaded, budget: string): Decision => {
+  const cap = loaded.budgets[budget]?.max_cost_tier ?? loaded.budgets.default?.max_cost_tier ?? 5
   const choice = choose(shape, loaded.profiles, phase, cap)
   const warnings = [...choice.warnings]
   if (loaded.warning) warnings.push(loaded.warning)
-  return { task: task.slice(0, 500), phase, shape, profile: choice.profile.id, model: choice.profile.model,
-    effort: choice.profile.effort ?? 'default', reason: choice.reason, source: 'rubric', answer_confidence: RUBRIC_CONFIDENCE, warnings }
+  return { task: '', phase, shape, profile: choice.profile.id, model: choice.profile.model,
+    effort: choice.profile.effort ?? 'default', reason: choice.reason, source, answer_confidence: confidence, warnings }
+}
+
+const parseShape = (value: unknown): Shape => {
+  if (typeof value === 'string' && value in SHAPES) return value as Shape
+  throw new Error('classifier returned an unknown shape')
+}
+
+async function classifyLaya($: EngineInterface, task: string, phase: Phase): Promise<ClassifyResult> {
+  const windows = await $.env.get('OS') === 'Windows_NT'
+  const launcher = windows
+    ? ['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', `${$.plugin.root}/hooks/launch.ps1`]
+    : ['sh', `${$.plugin.root}/hooks/launch.sh`]
+  const ran = await $.process.run([...launcher, 'runtime-cli.ts', 'classify'], {
+    stdin: JSON.stringify({ task, phase }),
+    timeoutMs: 30000,
+  })
+  if (ran.exitCode !== 0) throw new Error((ran.stderr || ran.stdout || `exit ${ran.exitCode}`).trim().slice(0, 160))
+  const parsed = JSON.parse(ran.stdout) as { shape?: unknown; answer_confidence?: unknown; source?: unknown }
+  return { shape: parseShape(parsed.shape), answer_confidence: Number(parsed.answer_confidence ?? RUBRIC_CONFIDENCE), source: String(parsed.source || 'laya') }
+}
+
+async function routeLaya($: EngineInterface, task: string, phase: Phase, loaded: Loaded, budget: string): Promise<Decision> {
+  const classified = await classifyLaya($, task, phase)
+  return decisionFromShape(classified.shape, classified.answer_confidence, classified.source, phase, loaded, budget)
 }
 
 async function loadProfiles($: EngineInterface, profilesPath: string): Promise<Loaded> {
@@ -81,12 +111,13 @@ async function appendLine($: EngineInterface, path: string, row: unknown): Promi
 
 async function routeCli($: EngineInterface, command: string, task: string, phase: Phase, loaded: Loaded, budget: string,
   profilesPath: string, config: string): Promise<Decision> {
-  const argv = [command, 'route', '--budget', budget, '--phase', phase, '--task', task, '--origin', 'claude-code-plugin',
+  const argv = [command, 'route', '--budget', budget, '--phase', phase, '--task-stdin', '--origin', 'claude-code-plugin',
     '--profiles', profilesPath || `${$.plugin.root}/profiles.builtin.json`]
   if (config) argv.push('--config', config)
-  const ran = await $.process.run(argv, { timeoutMs: 30000 })
-  if (ran.exitCode !== 0) throw new Error(ran.stderr.trim().slice(0, 200) || `exit ${ran.exitCode}`)
-  const parsed = JSON.parse(ran.stdout) as Decision
+  const ran = await $.process.run(argv, { stdin: task, timeoutMs: 30000 })
+  if (ran.exitCode !== 0) throw new Error('taskshape command failed; original model kept')
+  let parsed: Decision
+  try { parsed = JSON.parse(ran.stdout) as Decision } catch { throw new Error('taskshape command returned invalid JSON') }
   parsed.source = `cli:${parsed.source}`
   if (loaded.warning) parsed.warnings = [...(parsed.warnings ?? []), loaded.warning]
   return parsed
@@ -97,6 +128,7 @@ export const register: Register = (on, options) => {
   const profilesPath = String(options.profiles || '')
   const budget = String(options.budget || 'default')
   const config = String(options.config || '')
+  const backend: Backend = options.backend === 'heuristic' ? 'heuristic' : 'laya'
   const decisionsOption = String(options.decisions || '')
   const recordsOption = String(options.records || '')
   const enforce = options.mode !== 'suggest' // routing is on unless the user asks to only observe
@@ -116,17 +148,12 @@ export const register: Register = (on, options) => {
     let decision: Decision
     try {
       decision = command ? await routeCli($, command, e.prompt, phase, loaded, budget, profilesPath, config)
-        : routeEmbedded(e.prompt, phase, loaded, budget)
+        : backend === 'heuristic' ? routeEmbedded(e.prompt, phase, loaded, budget) : await routeLaya($, e.prompt, phase, loaded, budget)
     } catch (error) {
-      // The Python router failed: the built-in rubric answers instead, and the decision says so.
-      try {
-        decision = routeEmbedded(e.prompt, phase, loaded, budget)
-        decision.source = 'rubric-fallback'
-        decision.warnings.push(`taskshape command failed: ${String(error).slice(0, 120)}`)
-      } catch (inner) {
-        $.ui.status(`${name}: routing failed, launch unchanged (${String(inner).slice(0, 80)})`)
-        return next(e)
-      }
+      const source = command ? 'taskshape command' : 'Laya runtime'
+      $.ui.status(`${name}: ${source} failed, launch unchanged (${String(error).slice(0, 80)})`)
+      $.ui.toast(`${name}: routing unavailable; launch unchanged`)
+      return next(e)
     }
     const folder = await dataDir($)
     const decisionsPath = decisionsOption || `${folder}/decisions.jsonl`

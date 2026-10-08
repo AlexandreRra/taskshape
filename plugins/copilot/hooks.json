@@ -4,16 +4,16 @@
     "sessionStart": [
       {
         "type": "command",
-        "exec": "node",
-        "args": ["--no-warnings", "--experimental-strip-types", "hooks/sessionstart.ts"],
+        "bash": "sh hooks/launch.sh sessionstart.ts",
+        "powershell": "& .\\hooks\\launch.ps1 sessionstart.ts",
         "timeoutSec": 10
       }
     ],
     "preToolUse": [
       {
         "type": "command",
-        "exec": "node",
-        "args": ["--no-warnings", "--experimental-strip-types", "hooks/pretooluse.ts"],
+        "bash": "sh hooks/launch.sh pretooluse.ts",
+        "powershell": "& .\\hooks\\launch.ps1 pretooluse.ts",
         "matcher": "^task$",
         "timeoutSec": 30
       }
@@ -21,8 +21,8 @@
     "subagentStop": [
       {
         "type": "command",
-        "exec": "node",
-        "args": ["--no-warnings", "--experimental-strip-types", "hooks/subagentstop.ts"],
+        "bash": "sh hooks/launch.sh subagentstop.ts",
+        "powershell": "& .\\hooks\\launch.ps1 subagentstop.ts",
         "timeoutSec": 15
       }
     ]

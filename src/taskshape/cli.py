@@ -12,7 +12,18 @@ from .policy import table
 from .router import HeuristicBackend, LayaBackend, route
 
 HERE = Path(__file__).resolve().parent
-DEFAULT_CATALOG = HERE.parent.parent / "catalog" / "models.json"
+
+
+def _default_data(name: str) -> Path | None:
+    for base in (HERE / "data", HERE.parent.parent.parent / "catalog"):
+        path = base / name
+        if path.exists():
+            return path
+    return None
+
+
+DEFAULT_CATALOG = _default_data("models.json")
+DEFAULT_PROFILES = _default_data("profiles.example.json")
 
 
 def _profiles(args):
@@ -22,6 +33,7 @@ def _profiles(args):
 
 
 def cmd_route(args):
+    task = sys.stdin.read() if args.task_stdin else args.task
     value, _ = _profiles(args)
     budget = value["budgets"].get(args.budget)
     if budget is None:
@@ -39,7 +51,7 @@ def cmd_route(args):
         unknown = allowed - {p["id"] for p in value["profiles"]}
         if unknown:
             raise ValueError("--allowed names unknown profiles: %s" % ", ".join(sorted(unknown)))
-    decision = route(args.task, value["profiles"], args.phase, budget["max_cost_tier"], backend, allowed=allowed,
+    decision = route(task, value["profiles"], args.phase, budget["max_cost_tier"], backend, allowed=allowed,
                      head_max_len=config.get("head_max_len", labmod.DEFAULT_HEAD_MAX_LEN))
     result = decision.as_dict()
     if args.log:
@@ -90,12 +102,14 @@ def build_parser():
     sub = parser.add_subparsers(dest="action", required=True)
 
     def profile_args(p):
-        p.add_argument("--profiles", type=Path, required=True)
-        p.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG if DEFAULT_CATALOG.exists() else None)
+        p.add_argument("--profiles", type=Path, default=DEFAULT_PROFILES)
+        p.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG)
 
     p = sub.add_parser("route", help="classify a task and pick a profile")
     profile_args(p)
-    p.add_argument("--task", required=True)
+    task_source = p.add_mutually_exclusive_group(required=True)
+    task_source.add_argument("--task")
+    task_source.add_argument("--task-stdin", action="store_true", help="read the task text from stdin")
     p.add_argument("--phase", choices=("work", "review"), default="work")
     p.add_argument("--budget", default="default")
     p.add_argument("--backend", choices=("auto", "heuristic", "laya"), default="auto")
@@ -110,7 +124,7 @@ def build_parser():
     profile_args(p)
     p = sub.add_parser("record", help="append an execution outcome")
     p.add_argument("--file", required=True)
-    p.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG if DEFAULT_CATALOG.exists() else None)
+    p.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG)
     for name in ("--shape", "--profile", "--model", "--effort"):
         p.add_argument(name, required=True)
     p.add_argument("--accepted", action=argparse.BooleanOptionalAction, required=True)

@@ -13,16 +13,33 @@ ROOT = Path(__file__).resolve().parent.parent
 SHARED = ROOT / "plugins/shared"
 CORE = ("shapes.ts", "rubric.ts", "policy.ts")
 HOOK_PLUGINS = ("plugins/copilot", "plugins/vscode")
+ALL_PLUGINS = (*HOOK_PLUGINS, "plugins/claude-code")
+PYTHON_CORE = ("__init__.py", "catalog.py", "policy.py", "router.py", "rubric.py", "shapes.py")
+CATALOG_DATA = ("models.json", "profiles.example.json")
 
 
 def plan() -> list[tuple[Path, Path]]:
     pairs = []
+    for name in PYTHON_CORE:
+        pairs.append((ROOT / "src/taskshape" / name, ROOT / "runtime/taskshape" / name))
+    for name in CATALOG_DATA:
+        pairs.append((ROOT / "catalog" / name, ROOT / "src/taskshape/data" / name))
     for name in CORE:
         pairs.append((SHARED / name, ROOT / "plugins/claude-code/hooks" / name))
+    for name in ("runtime.ts", "runtime-cli.ts", "launch.sh", "launch.ps1"):
+        pairs.append((SHARED / name, ROOT / "plugins/claude-code/hooks" / name))
     for plugin in HOOK_PLUGINS:
-        for source in sorted(SHARED.glob("*.ts")):
+        for source in sorted(SHARED.iterdir()):
+            if source.suffix not in (".ts", ".sh", ".ps1"):
+                continue
             pairs.append((source, ROOT / plugin / "hooks" / source.name))
         pairs.append((SHARED / "profiles.copilot.json", ROOT / plugin / "profiles.copilot.json"))
+    for plugin in ALL_PLUGINS:
+        for source in sorted((ROOT / "runtime").glob("*")):
+            if source.is_file():
+                pairs.append((source, ROOT / plugin / "runtime" / source.name))
+        for name in PYTHON_CORE:
+            pairs.append((ROOT / "src/taskshape" / name, ROOT / plugin / "runtime/taskshape" / name))
     return pairs
 
 

@@ -9,6 +9,7 @@ const cliDecision = (model: string) => JSON.stringify({
   task: 'x', phase: 'work', shape: 'coupled', profile: 'sol61-high', model, effort: 'high', reason: 'cheapest adequate',
   source: 'laya', answer_confidence: 0.82, warnings: [],
 })
+const layaDecision = (shape = 'coupled') => JSON.stringify({ shape, answer_confidence: 0.91, source: 'laya' })
 
 const coupled = { tool: 'Agent' as const, description: 'ledger migration', prompt: 'Own ledger.py and tests; the migration must be idempotent' }
 const typo = { tool: 'Agent' as const, description: 'typo', prompt: 'Fix the typo in README and bump the version' }
@@ -55,7 +56,7 @@ describe('aliasFor', () => {
 })
 
 describe('zero configuration', () => {
-  test('suggest mode with built-in profiles logs the decision under ~/.taskshape and launches unchanged', { options: { mode: 'suggest' } }, async ($, on) => {
+  test('suggest mode with built-in profiles logs the decision under ~/.taskshape and launches unchanged', { options: { mode: 'suggest', backend: 'heuristic' } }, async ($, on) => {
     const files: Record<string, string> = {}
     const writes: Written[] = []
     const seen: unknown[] = []
@@ -80,7 +81,7 @@ describe('zero configuration', () => {
     expect(files['/home/t/.taskshape/decisions.jsonl'].trim().split('\n').length).toBe(2)
   })
 
-  test('with no options at all it enforces: the model is rewritten to the built-in profile alias per shape', async ($, on) => {
+  test('with heuristic backend it enforces: the model is rewritten to the built-in profile alias per shape', { options: { backend: 'heuristic' } }, async ($, on) => {
     const files: Record<string, string> = {}
     const writes: Written[] = []
     const seen: unknown[] = []
@@ -94,7 +95,7 @@ describe('zero configuration', () => {
     expect(outcome.outcome).toBe('enforced')
   })
 
-  test('suggest mode keeps private task text in the launch but out of decisions and outcomes', { options: { mode: 'suggest' } }, async ($, on) => {
+  test('suggest mode keeps private task text in the launch but out of decisions and outcomes', { options: { mode: 'suggest', backend: 'heuristic' } }, async ($, on) => {
     const files: Record<string, string> = {}
     const writes: Written[] = []
     const seen: unknown[] = []
@@ -117,7 +118,7 @@ describe('zero configuration', () => {
     expectNoRawTaskText(files, writes, privateSuggest)
   })
 
-  test('enforce mode keeps private task text in the launch but out of decisions and outcomes', async ($, on) => {
+  test('enforce mode keeps private task text in the launch but out of decisions and outcomes', { options: { backend: 'heuristic' } }, async ($, on) => {
     const files: Record<string, string> = {}
     const writes: Written[] = []
     const seen: unknown[] = []
@@ -140,7 +141,53 @@ describe('zero configuration', () => {
     expectNoRawTaskText(files, writes, privateEnforce)
   })
 
-  test('CLAUDE_PLUGIN_DATA wins over the home folder', { options: { mode: 'suggest' } }, async ($, on) => {
+  test('default Laya backend classifies through runtime-cli stdin and then applies the profile policy', async ($, on) => {
+    const files: Record<string, string> = {}
+    const writes: Written[] = []
+    const runs: { argv: readonly string[]; init?: { stdin?: string; timeoutMs?: number } }[] = []
+    const seen: unknown[] = []
+    wire(on, files, writes)
+    on('process.run', (_: unknown, e: { argv: readonly string[]; init?: { stdin?: string; timeoutMs?: number } }) => {
+      runs.push(e)
+      return ok(layaDecision('coupled'))
+    })
+    on('tool.call', { tool: 'Agent' }, (_: unknown, e: { description?: string; prompt?: string; model?: string }) => {
+      seen.push({ description: e.description, prompt: e.prompt, model: e.model })
+      return { result: 'done', text: 'done' }
+    })
+    await $.tool.call(privateEnforce)
+    expect(runs.length).toBe(1)
+    expect(runs[0].argv[0]).toBe('sh')
+    expect(runs[0].argv[1]).toMatch(/\/hooks\/launch\.sh$/)
+    expect(runs[0].argv.slice(2)).toEqual(['runtime-cli.ts', 'classify'])
+    expect(JSON.parse(runs[0].init?.stdin || '{}')).toEqual({ task: privateEnforce.prompt, phase: 'work' })
+    expect(runs[0].init?.timeoutMs).toBe(30000)
+    expect(seen).toEqual([{ description: privateEnforce.description, prompt: privateEnforce.prompt, model: 'opus' }])
+    const decision = JSON.parse(files['/home/t/.taskshape/decisions.jsonl'].trim())
+    expect(decision.source).toBe('laya')
+    expect(decision.answer_confidence).toBe(0.91)
+    expect(decision.shape).toBe('coupled')
+    expect(decision.profile).toBe('opus')
+    expectNoRawTaskText(files, writes, privateEnforce)
+  })
+
+  test('default Laya setup failure leaves the Agent launch unchanged without persisting private task text', async ($, on) => {
+    const files: Record<string, string> = {}
+    const writes: Written[] = []
+    const seen: unknown[] = []
+    wire(on, files, writes)
+    on('process.run', () => ({ value: { exitCode: 2, stdout: '', stderr: 'runtime setup unavailable', isStdoutTruncated: false, isStderrTruncated: false } }))
+    on('tool.call', { tool: 'Agent' }, (_: unknown, e: { description?: string; prompt?: string; model?: string }) => {
+      seen.push({ description: e.description, prompt: e.prompt, model: e.model })
+      return { result: 'done', text: 'done' }
+    })
+    await $.tool.call(privateEnforce)
+    expect(seen).toEqual([{ description: privateEnforce.description, prompt: privateEnforce.prompt, model: undefined }])
+    expect(writes).toEqual([])
+    expectNoRawTaskText(files, writes, privateEnforce)
+  })
+
+  test('CLAUDE_PLUGIN_DATA wins over the home folder', { options: { mode: 'suggest', backend: 'heuristic' } }, async ($, on) => {
     const files: Record<string, string> = {}
     const writes: Written[] = []
     wire(on, files, writes, { HOME: '/home/t', CLAUDE_PLUGIN_DATA: '/data/taskshape' })
@@ -160,7 +207,7 @@ describe('zero configuration', () => {
 })
 
 describe('profiles file', () => {
-  test('a valid profiles.json replaces the built-in table', { options: { mode: 'enforce', profiles: '/etc/p.json' } }, async ($, on) => {
+  test('a valid profiles.json replaces the built-in table', { options: { mode: 'enforce', backend: 'heuristic', profiles: '/etc/p.json' } }, async ($, on) => {
     const files: Record<string, string> = { '/etc/p.json': JSON.stringify({ version: 1, profiles: [
       { id: 'only-sonnet', model: 'claude-sonnet-5-5', capability: 4, cost_tier: 1, phases: ['work', 'review'] }] }) }
     const seen: unknown[] = []
@@ -171,7 +218,7 @@ describe('profiles file', () => {
     expect(JSON.parse(files['/home/t/.taskshape/decisions.jsonl'].trim()).profile).toBe('only-sonnet')
   })
 
-  test('an unreadable or invalid profiles.json falls back to the built-in table with a warning', { options: { mode: 'enforce', profiles: '/etc/bad.json' } }, async ($, on) => {
+  test('an unreadable or invalid profiles.json falls back to the built-in table with a warning', { options: { mode: 'enforce', backend: 'heuristic', profiles: '/etc/bad.json' } }, async ($, on) => {
     const files: Record<string, string> = { '/etc/bad.json': '{"version": 2}' }
     const seen: unknown[] = []
     wire(on, files, [])
@@ -186,16 +233,26 @@ describe('profiles file', () => {
 describe('python command', () => {
   test('uses the CLI decision when a command is configured', { options: { mode: 'enforce', command: '/opt/taskshape', profiles: '/etc/p.json' } }, async ($, on) => {
     const files: Record<string, string> = { '/etc/p.json': JSON.stringify({ version: 1, profiles: [{ id: 'sol61-high', model: 'gpt-6.1-sol', capability: 3, cost_tier: 3 }] }) }
-    const argvs: string[][] = []
+    const runs: { argv: string[]; stdin?: string }[] = []
     const seen: unknown[] = []
     wire(on, files, [])
-    on('process.run', (_: unknown, e: { argv: readonly string[] }) => { argvs.push([...e.argv]); return ok(cliDecision('claude-opus-5-5')) })
-    on('tool.call', { tool: 'Agent' }, (_: unknown, e: { model?: string }) => { seen.push(e.model); return { result: 'done', text: 'done' } })
-    await $.tool.call(coupled)
-    expect(seen).toEqual(['opus'])
-    expect(argvs.length).toBe(1)
-    expect(argvs[0].slice(0, 2)).toEqual(['/opt/taskshape', 'route'])
-    expect(argvs[0]).toContain('/etc/p.json')
+    on('process.run', (_: unknown, e: { argv: readonly string[]; init?: { stdin?: string } }) => {
+      runs.push({ argv: [...e.argv], stdin: e.init?.stdin })
+      return ok(cliDecision('claude-opus-5-5'))
+    })
+    on('tool.call', { tool: 'Agent' }, (_: unknown, e: { description?: string; prompt?: string; model?: string }) => {
+      seen.push({ description: e.description, prompt: e.prompt, model: e.model })
+      return { result: 'done', text: 'done' }
+    })
+    await $.tool.call(privateEnforce)
+    expect(seen).toEqual([{ description: privateEnforce.description, prompt: privateEnforce.prompt, model: 'opus' }])
+    expect(runs.length).toBe(1)
+    expect(runs[0].argv.slice(0, 2)).toEqual(['/opt/taskshape', 'route'])
+    expect(runs[0].argv).toContain('/etc/p.json')
+    expect(runs[0].argv).toContain('--task-stdin')
+    expect(runs[0].argv).not.toContain('--task')
+    expect(JSON.stringify(runs[0].argv)).not.toContain(privateEnforce.prompt)
+    expect(runs[0].stdin).toBe(privateEnforce.prompt)
     expect(JSON.parse(files['/home/t/.taskshape/decisions.jsonl'].trim()).source).toBe('cli:laya')
   })
 
@@ -208,16 +265,19 @@ describe('python command', () => {
     expect(seen).toEqual([undefined])
   })
 
-  test('a failing CLI falls back to the built-in rubric and says so', { options: { mode: 'enforce', command: '/opt/taskshape' } }, async ($, on) => {
+  test('a failing CLI skips routing and leaves the launch unchanged', { options: { mode: 'enforce', command: '/opt/taskshape' } }, async ($, on) => {
     const files: Record<string, string> = {}
     const seen: unknown[] = []
-    wire(on, files, [])
+    const writes: Written[] = []
+    wire(on, files, writes)
     on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: 'ValueError: boom', isStdoutTruncated: false, isStderrTruncated: false } }))
-    on('tool.call', { tool: 'Agent' }, (_: unknown, e: { model?: string }) => { seen.push(e.model); return { result: 'done', text: 'done' } })
-    await $.tool.call(coupled)
-    expect(seen).toEqual(['opus'])
-    const decision = JSON.parse(files['/home/t/.taskshape/decisions.jsonl'].trim())
-    expect(decision.source).toBe('rubric-fallback')
-    expect(decision.warnings.join(' ')).toContain('taskshape command failed')
+    on('tool.call', { tool: 'Agent' }, (_: unknown, e: { description?: string; prompt?: string; model?: string }) => {
+      seen.push({ description: e.description, prompt: e.prompt, model: e.model })
+      return { result: 'done', text: 'done' }
+    })
+    await $.tool.call(privateEnforce)
+    expect(seen).toEqual([{ description: privateEnforce.description, prompt: privateEnforce.prompt, model: undefined }])
+    expect(writes).toEqual([])
+    expectNoRawTaskText(files, writes, privateEnforce)
   })
 })

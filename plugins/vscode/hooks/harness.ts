@@ -11,12 +11,14 @@ import { type ModelInfo, type Profile, type Table, choose, validateProfiles } fr
 import type { Phase, Shape } from './shapes.ts'
 
 export type Mode = 'suggest' | 'enforce'
+export type Backend = 'laya' | 'heuristic'
 
 export type Config = {
   mode: Mode
   budget: string
+  backend: Backend // default Laya runtime; set heuristic for the embedded rubric
   profiles: string // path to a profiles.json; empty = the plugin's profiles.copilot.json
-  command: string // path to the Python taskshape CLI; empty = embedded rubric
+  command: string // path to the Python taskshape CLI; empty = the selected backend
   config: string // taskshape.json for the Python side
   respectExplicitModel: boolean // a launch that already names a model is left alone
   routeNamedAgents: boolean // VS Code only: route launches of a named custom agent (which may pin its own model)
@@ -25,7 +27,7 @@ export type Config = {
 }
 
 export const DEFAULT_CONFIG: Config = {
-  mode: 'enforce', budget: 'default', profiles: '', command: '', config: '', respectExplicitModel: true, routeNamedAgents: false,
+  mode: 'enforce', budget: 'default', backend: 'laya', profiles: '', command: '', config: '', respectExplicitModel: true, routeNamedAgents: false,
   discoverModels: true, copilot: 'copilot',
 }
 
@@ -33,15 +35,15 @@ export const DEFAULT_CONFIG: Config = {
 export const configTemplate = (): string => JSON.stringify({
   note: 'taskshape settings for the Copilot CLI and VS Code plugins, written on first run and never overwritten. '
     + 'mode: "enforce" rewrites the sub-agent model, "suggest" only logs each decision. '
-    + 'budget: a name from the profiles table ("economy", "standard", "default"). '
+    + 'budget: a name from the profiles table ("economy", "standard", "default"). backend: "laya" or "heuristic". '
     + "profiles: path to your own profiles.json (empty: the plugin's profiles.copilot.json). "
-    + 'command: path to the Python taskshape CLI (empty: the embedded rubric). config: taskshape.json for that CLI. '
+    + 'command: path to the Python taskshape CLI (empty: the selected backend). config: taskshape.json for that CLI. '
     + 'respectExplicitModel: leave a launch that already names a model alone. '
     + 'routeNamedAgents (VS Code): also route launches of named custom agents. '
     + 'discoverModels: once a day ask the Copilot CLI (copilot --acp, no model call) which models the account offers, with their '
     + 'names and usage multipliers, and route only within them (cache: models.json next to this file). copilot: that CLI command. '
     + 'Environment variables TASKSHAPE_MODE, TASKSHAPE_BUDGET, TASKSHAPE_PROFILES, TASKSHAPE_COMMAND, TASKSHAPE_CONFIG, '
-    + 'TASKSHAPE_RESPECT_EXPLICIT_MODEL, TASKSHAPE_ROUTE_NAMED_AGENTS, TASKSHAPE_DISCOVER_MODELS and TASKSHAPE_COPILOT override this file.',
+    + 'TASKSHAPE_BACKEND, TASKSHAPE_RESPECT_EXPLICIT_MODEL, TASKSHAPE_ROUTE_NAMED_AGENTS, TASKSHAPE_DISCOVER_MODELS and TASKSHAPE_COPILOT override this file.',
   ...DEFAULT_CONFIG,
 }, null, 2) + '\n'
 
@@ -95,6 +97,7 @@ export type Decision = {
   source: string
   answer_confidence: number
   warnings: string[]
+  shape_probabilities?: Record<string, number>
 }
 
 export type CliOutput = { permissionDecision: 'allow'; permissionDecisionReason: string; modifiedArgs: TaskArgs }
@@ -115,7 +118,7 @@ const VENDOR = 'copilot'
 
 export const parseConfig = (raw: unknown, env: Record<string, string | undefined> = {}): Config => {
   const value = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
-  const pick = (key: 'mode' | 'budget' | 'profiles' | 'command' | 'config' | 'copilot', envName: string): string => {
+  const pick = (key: 'mode' | 'budget' | 'backend' | 'profiles' | 'command' | 'config' | 'copilot', envName: string): string => {
     const fromEnv = env[envName]
     if (fromEnv !== undefined && fromEnv !== '') return fromEnv
     const fromFile = value[key]
@@ -127,9 +130,11 @@ export const parseConfig = (raw: unknown, env: Record<string, string | undefined
     return typeof value[key] === 'boolean' ? (value[key] as boolean) : DEFAULT_CONFIG[key]
   }
   const mode = pick('mode', 'TASKSHAPE_MODE')
+  const backend = pick('backend', 'TASKSHAPE_BACKEND')
   return {
     mode: mode === 'suggest' ? 'suggest' : mode === 'enforce' ? 'enforce' : DEFAULT_CONFIG.mode,
     budget: pick('budget', 'TASKSHAPE_BUDGET'),
+    backend: backend === 'heuristic' ? 'heuristic' : backend === 'laya' ? 'laya' : DEFAULT_CONFIG.backend,
     profiles: pick('profiles', 'TASKSHAPE_PROFILES'),
     command: pick('command', 'TASKSHAPE_COMMAND'),
     config: pick('config', 'TASKSHAPE_CONFIG'),
@@ -149,6 +154,15 @@ export const routeEmbedded = (task: string, phase: Phase, table: Table, budget: 
   return { task: task.slice(0, 500), phase, shape, profile: choice.profile.id, model: choice.profile.model,
     effort: choice.profile.effort ?? 'default', reason: choice.reason, source: 'rubric', answer_confidence: RUBRIC_CONFIDENCE,
     warnings: [...choice.warnings] }
+}
+
+export const routeClassified = (task: string, phase: Phase, table: Table, budget: string, shape: Shape,
+  answerConfidence: number, source: string, candidates?: readonly Profile[], shapeProbabilities?: Record<string, number>): Decision => {
+  const cap = table.budgets[budget]?.max_cost_tier ?? table.budgets.default?.max_cost_tier ?? 5
+  const choice = choose(shape, candidates ?? table.profiles, phase, cap)
+  return { task: task.slice(0, 500), phase, shape, profile: choice.profile.id, model: choice.profile.model,
+    effort: choice.profile.effort ?? 'default', reason: `classified as ${shape}; ${choice.reason}`, source,
+    answer_confidence: answerConfidence, warnings: [...choice.warnings], shape_probabilities: shapeProbabilities }
 }
 
 /** The name VS Code resolves (`lookupLanguageModelByQualifiedName`): "<name> (<vendor>)". */

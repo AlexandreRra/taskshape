@@ -1,7 +1,7 @@
 {
   "name": "taskshape",
-  "version": "0.1.0",
-  "description": "Cost-aware routing for every sub-agent launch: classifies the task shape and picks the cheapest adequate model. Works with zero configuration (enforce mode rewrites the model, built-in Claude profiles); suggest mode only logs.",
+  "version": "0.2.0",
+  "description": "Route sub-agent launches with local Laya and the configured model profiles. The plugin prepares its private Python runtime and checkpoint automatically.",
   "author": {
     "name": "Alexandre Amorim"
   },
@@ -33,6 +33,16 @@
       "title": "Budget",
       "description": "Budget name from profiles.json to route under.",
       "default": "default"
+    },
+    "backend": {
+      "type": "string",
+      "title": "Classifier backend",
+      "description": "laya: use the bundled local runtime and auto-provision it when needed; heuristic: use the plugin's built-in rubric.",
+      "default": "laya",
+      "options": [
+        "laya",
+        "heuristic"
+      ]
     },
     "config": {
       "type": "string",

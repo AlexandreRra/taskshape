@@ -1,0 +1,49 @@
+name: Local Laya runtime
+
+on:
+  push:
+    paths:
+      - 'runtime/**'
+      - 'src/taskshape/**'
+      - 'plugins/**'
+      - 'scripts/smoke-runtime.ts'
+      - '.github/workflows/runtime.yml'
+  pull_request:
+    paths:
+      - 'runtime/**'
+      - 'src/taskshape/**'
+      - 'plugins/**'
+      - 'scripts/smoke-runtime.ts'
+      - '.github/workflows/runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    name: Fresh install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-15]
+    env:
+      TASKSHAPE_HOME: ${{ runner.temp }}/taskshape-fresh-runtime
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 22.x
+      - name: Prepare bundled Node (Linux and macOS)
+        if: runner.os != 'Windows'
+        run: sh plugins/vscode/hooks/launch.sh --install-node
+      - name: Prepare bundled Node (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '& ./plugins/vscode/hooks/launch.ps1 --install-node'
+      - name: Install private Python and run offline Laya inference
+        run: node --no-warnings --experimental-strip-types scripts/smoke-runtime.ts

@@ -1,0 +1,2152 @@
+{
+  "version": 1,
+  "label_source": "agent-authored synthetic-curated; not independently human-validated",
+  "limitations": "Small synthetic EN/PT-BR benchmark; not evidence of general production accuracy.",
+  "source_datasets": {
+    "train": {
+      "sha256": "8b3b9a7ca3ac3fe3ff33b55a7b8fd53405d8b2bed59e6480fe75d63824d41949",
+      "rows": 160
+    },
+    "heldout": {
+      "sha256": "727fc59e16ae7e95dba5df8d23f6519af2fb928fb6d4f1c756e3763d428f718f",
+      "rows": 56
+    }
+  },
+  "packages": {
+    "laya": "0.4.0",
+    "torch": "2.11.0+cpu",
+    "transformers": "5.18.0",
+    "safetensors": "0.8.0"
+  },
+  "baseline": {
+    "version": 1,
+    "created_at": 1791474061.8969154,
+    "checkpoint": "checkpoints/public-multilingual",
+    "checkpoint_sha256": "9d628fd971b700382ac6f65920a86f149777b2e748e0c955fb3b19695aa8f204",
+    "device": "cpu",
+    "splits": {
+      "heldout": {
+        "dataset": "checkpoints/public-multilingual/public-routing-inputs/heldout.jsonl",
+        "dataset_sha256": "a838625de9d0c5d112c9dfb0a4121583a248a4861f7d3b95e9bbcbe51ea16a4f",
+        "rows": 56,
+        "seconds": 19.21,
+        "metrics": {
+          "n": 56,
+          "accuracy": 0.4286,
+          "mean_answer_confidence": 0.6144,
+          "ece": 0.1941,
+          "confusion": {
+            "architecture->architecture": 2,
+            "architecture->coupled": 1,
+            "architecture->demanding": 3,
+            "architecture->lookup": 1,
+            "architecture->review": 4,
+            "architecture->routine": 1,
+            "coupled->architecture": 1,
+            "coupled->coupled": 3,
+            "coupled->demanding": 3,
+            "coupled->routine": 1,
+            "demanding->coupled": 4,
+            "demanding->lookup": 1,
+            "demanding->routine": 3,
+            "lookup->coupled": 1,
+            "lookup->lookup": 7,
+            "review->review": 4,
+            "routine->coupled": 1,
+            "routine->routine": 7,
+            "visual->coupled": 2,
+            "visual->routine": 5,
+            "visual->visual": 1
+          }
+        },
+        "results": [
+          {
+            "id": "heldout-en-work-lookup-001",
+            "expected": "lookup",
+            "choice": "lookup",
+            "correct": true,
+            "answer_confidence": 0.9801,
+            "confidence": 0.9305,
+            "probabilities": {
+              "lookup": 0.9801,
+              "routine": 0.0079,
+              "demanding": 0.002,
+              "visual": 0.001,
+              "coupled": 0.0071,
+              "architecture": 0.0019
+            }
+          },
+          {
+            "id": "heldout-en-work-lookup-002",
+            "expected": "lookup",
+            "choice": "coupled",
+            "correct": false,
+            "answer_confidence": 0.4155,
+            "confidence": 0.2366,
+            "probabilities": {
+              "lookup": 0.3581,
+              "routine": 0.0926,
+              "demanding": 0.0366,
+              "visual": 0.0468,
+              "coupled": 0.4155,
+              "architecture": 0.0504
+            }
+          },
+          {
+            "id": "heldout-en-work-lookup-003",
+            "expected": "lookup",
+            "choice": "lookup",
+            "correct": true,
+            "answer_confidence": 0.9993,
+            "confidence": 0.9961,
+            "probabilities": {
+              "lookup": 0.9993,
+              "routine": 0.0001,
+              "demanding": 0.0004,
+              "visual": 0.0,
+              "coupled": 0.0002,
+              "architecture": 0.0001
+            }
+          },
+          {
+            "id": "heldout-en-work-lookup-004",
+            "expected": "lookup",
+            "choice": "lookup",
+            "correct": true,
+            "answer_confidence": 0.872,
+            "confidence": 0.6897,
+            "probabilities": {
+              "lookup": 0.872,
+              "routine": 0.0302,
+              "demanding": 0.045,
+              "visual": 0.0039,
+              "coupled": 0.0407,
+              "architecture": 0.0082
+            }
+          },
+          {
+            "id": "heldout-en-work-routine-001",
+            "expected": "routine",
+            "choice": "routine",
+            "correct": true,
+            "answer_confidence": 0.7824,
+            "confidence": 0.5698,
+            "probabilities": {
+              "lookup": 0.0046,
+              "routine": 0.7824,
+              "demanding": 0.0555,
+              "visual": 0.0072,
+              "coupled": 0.1216,
+              "architecture": 0.0288
+            }
+          },
+          {
+            "id": "heldout-en-work-routine-002",
+            "expected": "routine",
+            "choice": "routine",
+            "correct": true,
+            "answer_confidence": 0.6546,
+            "confidence": 0.4707,
+            "probabilities": {
+              "lookup": 0.0087,
+              "routine": 0.6546,
+              "demanding": 0.0309,
+              "visual": 0.0154,
+              "coupled": 0.2592,
+              "architecture": 0.0312
+            }
+          },
+          {
+            "id": "heldout-en-work-routine-003",
+            "expected": "routine",
+            "choice": "routine",
+            "correct": true,
+            "answer_confidence": 0.4499,
+            "confidence": 0.2761,
+            "probabilities": {
+              "lookup": 0.0145,
+              "routine": 0.4499,
+              "demanding": 0.0477,
+              "visual": 0.0192,
+              "coupled": 0.1586,
+              "architecture": 0.31
+            }
+          },
+          {
+            "id": "heldout-en-work-routine-004",
+            "expected": "routine",
+            "choice": "coupled",
+            "correct": false,
+            "answer_confidence": 0.48,
+            "confidence": 0.3285,
+            "probabilities": {
+              "lookup": 0.0199,
+              "routine": 0.363,
+              "demanding": 0.0781,
+              "visual": 0.022,
+              "coupled": 0.48,
+              "architecture": 0.037
+            }
+          },
+          {
+            "id": "heldout-en-work-demanding-001",
+            "expected": "demanding",
+            "choice": "routine",
+            "correct": false,
+            "answer_confidence": 0.4655,
+            "confidence": 0.2675,
+            "probabilities": {
+              "lookup": 0.009,
+              "routine": 0.4655,
+              "demanding": 0.2298,
+              "visual": 0.028,
+              "coupled": 0.2214,
+              "architecture": 0.0463
+            }
+          },
+          {
+            "id": "heldout-en-work-demanding-002",
+            "expected": "demanding",
+            "choice": "coupled",
+            "correct": false,
+            "answer_confidence": 0.3827,
+            "confidence": 0.1531,
+            "probabilities": {
+              "lookup": 0.0155,
+              "routine": 0.2653,
+              "demanding": 0.0961,
+              "visual": 0.1329,
+              "coupled": 0.3827,
+              "architecture": 0.1075
+            }
+          },
+          {
+            "id": "heldout-en-work-demanding-003",
+            "expected": "demanding",
+            "choice": "lookup",
+            "correct": false,
+            "answer_confidence": 0.3212,
+            "confidence": 0.124,
+            "probabilities": {
+              "lookup": 0.3212,
+              "routine": 0.1111,
+              "demanding": 0.1371,
+              "visual": 0.0254,
+              "coupled": 0.3029,
+              "architecture": 0.1023
+            }
+          },
+          {
+            "id": "heldout-en-work-demanding-004",
+            "expected": "demanding",
+            "choice": "coupled",
+            "correct": false,
+            "answer_confidence": 0.4244,
+            "confidence": 0.273,
+            "probabilities": {
+              "lookup": 0.0143,
+              "routine": 0.3765,
+              "demanding": 0.0621,
+              "visual": 0.0443,
+              "coupled": 0.4244,
+              "architecture": 0.0783
+            }
+          },
+          {
+            "id": "heldout-en-work-visual-001",
+            "expected": "visual",
+            "choice": "routine",
+            "correct": false,
+            "answer_confidence": 0.3477,
+            "confidence": 0.1165,
+            "probabilities": {
+              "lookup": 0.0165,
+              "routine": 0.3477,
+              "demanding": 0.1146,
+              "visual": 0.1415,
+              "coupled": 0.2286,
+              "architecture": 0.1512
+            }
+          },
+          {
+            "id": "heldout-en-work-visual-002",
+            "expected": "visual",
+            "choice": "routine",
+            "correct": false,
+            "answer_confidence": 0.381,
+            "confidence": 0.2256,
+            "probabilities": {
+              "lookup": 0.0137,
+              "routine": 0.381,
+              "demanding": 0.0978,
+              "visual": 0.1293,
+              "coupled": 0.3495,
+              "architecture": 0.0287
+            }
+          },
+          {
+            "id": "heldout-en-work-visual-003",
+            "expected": "visual",
+            "choice": "coupled",
+            "correct": false,
+            "answer_confidence": 0.3922,
+            "confidence": 0.2263,
+            "probabilities": {
+              "lookup": 0.066,
+              "routine": 0.3423,
+              "demanding": 0.1458,
+              "visual": 0.0343,
+              "coupled": 0.3922,
+              "architecture": 0.0194
+            }
+          },
+          {
+            "id": "heldout-en-work-visual-004",
+            "expected": "visual",
+            "choice": "coupled",
+            "correct": false,
+            "answer_confidence": 0.5078,
+            "confidence": 0.3072,
+            "probabilities": {
+              "lookup": 0.0036,
+              "routine": 0.1867,
+              "demanding": 0.2355,
+              "visual": 0.0435,
+              "coupled": 0.5078,
+              "architecture": 0.0229
+            }
+          },
+          {
+            "id": "heldout-en-work-coupled-001",
+            "expected": "coupled",
+            "choice": "architecture",
+            "correct": false,
+            "answer_confidence": 0.3478,
+            "confidence": 0.2366,
+            "probabilities": {
+              "lookup": 0.0174,
+              "routine": 0.288,
+              "demanding": 0.0276,
+              "visual": 0.0338,
+              "coupled": 0.2854,
+              "architecture": 0.3478
+            }
+          },
+          {
+            "id": "heldout-en-work-coupled-002",
+            "expected": "coupled",
+            "choice": "demanding",
+            "correct": false,
+            "answer_confidence": 0.3426,
+            "confidence": 0.1469,
+            "probabilities": {
+              "lookup": 0.176,
+              "routine": 0.0754,
+              "demanding": 0.3426,
+              "visual": 0.0427,
+              "coupled": 0.3061,
+              "architecture": 0.0573
+            }
+          },
+          {
+            "id": "heldout-en-work-coupled-003",
+            "expected": "coupled",
+            "choice": "coupled",
+            "correct": true,
+            "answer_confidence": 0.4313,
+            "confidence": 0.1847,
+            "probabilities": {
+              "lookup": 0.0228,
+              "routine": 0.2584,
+              "demanding": 0.1358,
+              "visual": 0.0746,
+              "coupled": 0.4313,
+              "architecture": 0.0771
+            }
+          },
+          {
+            "id": "heldout-en-work-coupled-004",
+            "expected": "coupled",
+            "choice": "demanding",
+            "correct": false,
+            "answer_confidence": 0.3956,
+            "confidence": 0.1527,
+            "probabilities": {
+              "lookup": 0.0222,
+              "routine": 0.166,
+              "demanding": 0.3956,
+              "visual": 0.2188,
+              "coupled": 0.1435,
+              "architecture": 0.0539
+            }
+          },
+          {
+            "id": "heldout-en-work-architecture-001",
+            "expected": "architecture",
+            "choice": "demanding",
+            "correct": false,
+            "answer_confidence": 0.5581,
+            "confidence": 0.279,
+            "probabilities": {
+              "lookup": 0.0087,
+              "routine": 0.1072,
+              "demanding": 0.5581,
+              "visual": 0.0521,
+              "coupled": 0.1786,
+              "architecture": 0.0952
+            }
+          },
+          {
+            "id": "heldout-en-work-architecture-002",
+            "expected": "architecture",
+            "choice": "demanding",
+            "correct": false,
+            "answer_confidence": 0.2711,
+            "confidence": 0.1048,
+            "probabilities": {
+              "lookup": 0.0131,
+              "routine": 0.2517,
+              "demanding": 0.2711,
+              "visual": 0.209,
+              "coupled": 0.0994,
+              "architecture": 0.1556
+            }
+          },
+          {
+            "id": "heldout-en-work-architecture-003",
+            "expected": "architecture",
+            "choice": "architecture",
+            "correct": true,
+            "answer_confidence": 0.8954,
+            "confidence": 0.7438,
+            "probabilities": {
+              "lookup": 0.0061,
+              "routine": 0.0578,
+              "demanding": 0.0121,
+              "visual": 0.0028,
+              "coupled": 0.0258,
+              "architecture": 0.8954
+            }
+          },
+          {
+            "id": "heldout-en-work-architecture-004",
+            "expected": "architecture",
+            "choice": "architecture",
+            "correct": true,
+            "answer_confidence": 0.4948,
+            "confidence": 0.272,
+            "probabilities": {
+              "lookup": 0.0084,
+              "routine": 0.0648,
+              "demanding": 0.2858,
+              "visual": 0.0625,
+              "coupled": 0.0838,
+              "architecture": 0.4948
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-lookup-001",
+            "expected": "lookup",
+            "choice": "lookup",
+            "correct": true,
+            "answer_confidence": 0.9658,
+            "confidence": 0.8938,
+            "probabilities": {
+              "lookup": 0.9658,
+              "routine": 0.0055,
+              "demanding": 0.009,
+              "visual": 0.0006,
+              "coupled": 0.0174,
+              "architecture": 0.0018
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-lookup-002",
+            "expected": "lookup",
+            "choice": "lookup",
+            "correct": true,
+            "answer_confidence": 0.4106,
+            "confidence": 0.1247,
+            "probabilities": {
+              "lookup": 0.4106,
+              "routine": 0.1276,
+              "demanding": 0.0567,
+              "visual": 0.1179,
+              "coupled": 0.2101,
+              "architecture": 0.0771
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-lookup-003",
+            "expected": "lookup",
+            "choice": "lookup",
+            "correct": true,
+            "answer_confidence": 0.6548,
+            "confidence": 0.3869,
+            "probabilities": {
+              "lookup": 0.6548,
+              "routine": 0.1548,
+              "demanding": 0.0745,
+              "visual": 0.0037,
+              "coupled": 0.0731,
+              "architecture": 0.0391
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-lookup-004",
+            "expected": "lookup",
+            "choice": "lookup",
+            "correct": true,
+            "answer_confidence": 0.439,
+            "confidence": 0.2469,
+            "probabilities": {
+              "lookup": 0.439,
+              "routine": 0.0846,
+              "demanding": 0.3238,
+              "visual": 0.0157,
+              "coupled": 0.1032,
+              "architecture": 0.0338
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-routine-001",
+            "expected": "routine",
+            "choice": "routine",
+            "correct": true,
+            "answer_confidence": 0.5328,
+            "confidence": 0.3898,
+            "probabilities": {
+              "lookup": 0.0052,
+              "routine": 0.5328,
+              "demanding": 0.3121,
+              "visual": 0.0087,
+              "coupled": 0.1255,
+              "architecture": 0.0158
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-routine-002",
+            "expected": "routine",
+            "choice": "routine",
+            "correct": true,
+            "answer_confidence": 0.673,
+            "confidence": 0.411,
+            "probabilities": {
+              "lookup": 0.0333,
+              "routine": 0.673,
+              "demanding": 0.112,
+              "visual": 0.0181,
+              "coupled": 0.1432,
+              "architecture": 0.0204
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-routine-003",
+            "expected": "routine",
+            "choice": "routine",
+            "correct": true,
+            "answer_confidence": 0.7245,
+            "confidence": 0.4512,
+            "probabilities": {
+              "lookup": 0.0436,
+              "routine": 0.7245,
+              "demanding": 0.0806,
+              "visual": 0.0124,
+              "coupled": 0.1007,
+              "architecture": 0.0382
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-routine-004",
+            "expected": "routine",
+            "choice": "routine",
+            "correct": true,
+            "answer_confidence": 0.5723,
+            "confidence": 0.3995,
+            "probabilities": {
+              "lookup": 0.0025,
+              "routine": 0.5723,
+              "demanding": 0.2206,
+              "visual": 0.006,
+              "coupled": 0.1824,
+              "architecture": 0.0163
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-demanding-001",
+            "expected": "demanding",
+            "choice": "coupled",
+            "correct": false,
+            "answer_confidence": 0.4259,
+            "confidence": 0.1415,
+            "probabilities": {
+              "lookup": 0.0267,
+              "routine": 0.1675,
+              "demanding": 0.154,
+              "visual": 0.1277,
+              "coupled": 0.4259,
+              "architecture": 0.0983
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-demanding-002",
+            "expected": "demanding",
+            "choice": "routine",
+            "correct": false,
+            "answer_confidence": 0.4631,
+            "confidence": 0.1879,
+            "probabilities": {
+              "lookup": 0.0086,
+              "routine": 0.4631,
+              "demanding": 0.1276,
+              "visual": 0.1137,
+              "coupled": 0.1798,
+              "architecture": 0.107
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-demanding-003",
+            "expected": "demanding",
+            "choice": "coupled",
+            "correct": false,
+            "answer_confidence": 0.527,
+            "confidence": 0.2498,
+            "probabilities": {
+              "lookup": 0.0376,
+              "routine": 0.1178,
+              "demanding": 0.217,
+              "visual": 0.043,
+              "coupled": 0.527,
+              "architecture": 0.0575
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-demanding-004",
+            "expected": "demanding",
+            "choice": "routine",
+            "correct": false,
+            "answer_confidence": 0.5111,
+            "confidence": 0.338,
+            "probabilities": {
+              "lookup": 0.0186,
+              "routine": 0.5111,
+              "demanding": 0.1512,
+              "visual": 0.0122,
+              "coupled": 0.2893,
+              "architecture": 0.0175
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-visual-001",
+            "expected": "visual",
+            "choice": "visual",
+            "correct": true,
+            "answer_confidence": 0.4245,
+            "confidence": 0.1931,
+            "probabilities": {
+              "lookup": 0.0057,
+              "routine": 0.2138,
+              "demanding": 0.1938,
+              "visual": 0.4245,
+              "coupled": 0.0958,
+              "architecture": 0.0664
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-visual-002",
+            "expected": "visual",
+            "choice": "routine",
+            "correct": false,
+            "answer_confidence": 0.4702,
+            "confidence": 0.2641,
+            "probabilities": {
+              "lookup": 0.0297,
+              "routine": 0.4702,
+              "demanding": 0.0666,
+              "visual": 0.286,
+              "coupled": 0.1368,
+              "architecture": 0.0107
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-visual-003",
+            "expected": "visual",
+            "choice": "routine",
+            "correct": false,
+            "answer_confidence": 0.7435,
+            "confidence": 0.5253,
+            "probabilities": {
+              "lookup": 0.0056,
+              "routine": 0.7435,
+              "demanding": 0.0876,
+              "visual": 0.0137,
+              "coupled": 0.1363,
+              "architecture": 0.0134
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-visual-004",
+            "expected": "visual",
+            "choice": "routine",
+            "correct": false,
+            "answer_confidence": 0.6439,
+            "confidence": 0.3777,
+            "probabilities": {
+              "lookup": 0.0202,
+              "routine": 0.6439,
+              "demanding": 0.0713,
+              "visual": 0.1741,
+              "coupled": 0.0742,
+              "architecture": 0.0163
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-coupled-001",
+            "expected": "coupled",
+            "choice": "coupled",
+            "correct": true,
+            "answer_confidence": 0.7763,
+            "confidence": 0.5678,
+            "probabilities": {
+              "lookup": 0.0035,
+              "routine": 0.1324,
+              "demanding": 0.0459,
+              "visual": 0.0053,
+              "coupled": 0.7763,
+              "architecture": 0.0367
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-coupled-002",
+            "expected": "coupled",
+            "choice": "coupled",
+            "correct": true,
+            "answer_confidence": 0.5935,
+            "confidence": 0.3455,
+            "probabilities": {
+              "lookup": 0.0332,
+              "routine": 0.0792,
+              "demanding": 0.2265,
+              "visual": 0.0114,
+              "coupled": 0.5935,
+              "architecture": 0.0562
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-coupled-003",
+            "expected": "coupled",
+            "choice": "demanding",
+            "correct": false,
+            "answer_confidence": 0.7472,
+            "confidence": 0.5348,
+            "probabilities": {
+              "lookup": 0.0041,
+              "routine": 0.1348,
+              "demanding": 0.7472,
+              "visual": 0.0073,
+              "coupled": 0.0884,
+              "architecture": 0.0182
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-coupled-004",
+            "expected": "coupled",
+            "choice": "routine",
+            "correct": false,
+            "answer_confidence": 0.4224,
+            "confidence": 0.2019,
+            "probabilities": {
+              "lookup": 0.0114,
+              "routine": 0.4224,
+              "demanding": 0.2464,
+              "visual": 0.0578,
+              "coupled": 0.1899,
+              "architecture": 0.0721
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-architecture-001",
+            "expected": "architecture",
+            "choice": "coupled",
+            "correct": false,
+            "answer_confidence": 0.6366,
+            "confidence": 0.3732,
+            "probabilities": {
+              "lookup": 0.0092,
+              "routine": 0.1073,
+              "demanding": 0.1002,
+              "visual": 0.0118,
+              "coupled": 0.6366,
+              "architecture": 0.1349
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-architecture-002",
+            "expected": "architecture",
+            "choice": "lookup",
+            "correct": false,
+            "answer_confidence": 0.2103,
+            "confidence": 0.0256,
+            "probabilities": {
+              "lookup": 0.2103,
+              "routine": 0.1509,
+              "demanding": 0.2036,
+              "visual": 0.0717,
+              "coupled": 0.1747,
+              "architecture": 0.1888
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-architecture-003",
+            "expected": "architecture",
+            "choice": "routine",
+            "correct": false,
+            "answer_confidence": 0.7302,
+            "confidence": 0.5038,
+            "probabilities": {
+              "lookup": 0.0131,
+              "routine": 0.7302,
+              "demanding": 0.036,
+              "visual": 0.0072,
+              "coupled": 0.0514,
+              "architecture": 0.1621
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-architecture-004",
+            "expected": "architecture",
+            "choice": "demanding",
+            "correct": false,
+            "answer_confidence": 0.514,
+            "confidence": 0.2595,
+            "probabilities": {
+              "lookup": 0.0066,
+              "routine": 0.1015,
+              "demanding": 0.514,
+              "visual": 0.0371,
+              "coupled": 0.1393,
+              "architecture": 0.2016
+            }
+          },
+          {
+            "id": "heldout-en-review-review-001",
+            "expected": "review",
+            "choice": "review",
+            "correct": true,
+            "answer_confidence": 0.9999,
+            "confidence": 0.9985,
+            "probabilities": {
+              "review": 0.9999,
+              "architecture": 0.0001
+            }
+          },
+          {
+            "id": "heldout-en-review-review-002",
+            "expected": "review",
+            "choice": "review",
+            "correct": true,
+            "answer_confidence": 0.9999,
+            "confidence": 0.9987,
+            "probabilities": {
+              "review": 0.9999,
+              "architecture": 0.0001
+            }
+          },
+          {
+            "id": "heldout-en-review-architecture-001",
+            "expected": "architecture",
+            "choice": "review",
+            "correct": false,
+            "answer_confidence": 1.0,
+            "confidence": 0.9993,
+            "probabilities": {
+              "review": 1.0,
+              "architecture": 0.0
+            }
+          },
+          {
+            "id": "heldout-en-review-architecture-002",
+            "expected": "architecture",
+            "choice": "review",
+            "correct": false,
+            "answer_confidence": 0.9998,
+            "confidence": 0.9972,
+            "probabilities": {
+              "review": 0.9998,
+              "architecture": 0.0002
+            }
+          },
+          {
+            "id": "heldout-ptbr-review-review-001",
+            "expected": "review",
+            "choice": "review",
+            "correct": true,
+            "answer_confidence": 1.0,
+            "confidence": 1.0,
+            "probabilities": {
+              "review": 1.0,
+              "architecture": 0.0
+            }
+          },
+          {
+            "id": "heldout-ptbr-review-review-002",
+            "expected": "review",
+            "choice": "review",
+            "correct": true,
+            "answer_confidence": 1.0,
+            "confidence": 0.9999,
+            "probabilities": {
+              "review": 1.0,
+              "architecture": 0.0
+            }
+          },
+          {
+            "id": "heldout-ptbr-review-architecture-001",
+            "expected": "architecture",
+            "choice": "review",
+            "correct": false,
+            "answer_confidence": 0.9998,
+            "confidence": 0.9974,
+            "probabilities": {
+              "review": 0.9998,
+              "architecture": 0.0002
+            }
+          },
+          {
+            "id": "heldout-ptbr-review-architecture-002",
+            "expected": "architecture",
+            "choice": "review",
+            "correct": false,
+            "answer_confidence": 1.0,
+            "confidence": 0.9993,
+            "probabilities": {
+              "review": 1.0,
+              "architecture": 0.0
+            }
+          }
+        ]
+      }
+    },
+    "laya_config": {
+      "model_name": "rl-agent",
+      "max_len": 1024,
+      "head_max_len": 256,
+      "temperature": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "temperature_by_options": {},
+      "fine_tuned": null,
+      "taskshape": null
+    },
+    "by_language": {
+      "en": {
+        "n": 28,
+        "accuracy": 0.3929,
+        "mean_answer_confidence": 0.5926,
+        "ece": 0.2566,
+        "confusion": {
+          "architecture->architecture": 2,
+          "architecture->demanding": 2,
+          "architecture->review": 2,
+          "coupled->architecture": 1,
+          "coupled->coupled": 1,
+          "coupled->demanding": 2,
+          "demanding->coupled": 2,
+          "demanding->lookup": 1,
+          "demanding->routine": 1,
+          "lookup->coupled": 1,
+          "lookup->lookup": 3,
+          "review->review": 2,
+          "routine->coupled": 1,
+          "routine->routine": 3,
+          "visual->coupled": 2,
+          "visual->routine": 2
+        }
+      },
+      "pt-BR": {
+        "n": 28,
+        "accuracy": 0.4643,
+        "mean_answer_confidence": 0.6362,
+        "ece": 0.1719,
+        "confusion": {
+          "architecture->coupled": 1,
+          "architecture->demanding": 1,
+          "architecture->lookup": 1,
+          "architecture->review": 2,
+          "architecture->routine": 1,
+          "coupled->coupled": 2,
+          "coupled->demanding": 1,
+          "coupled->routine": 1,
+          "demanding->coupled": 2,
+          "demanding->routine": 2,
+          "lookup->lookup": 4,
+          "review->review": 2,
+          "routine->routine": 4,
+          "visual->routine": 3,
+          "visual->visual": 1
+        }
+      }
+    },
+    "by_phase": {
+      "review": {
+        "n": 8,
+        "accuracy": 0.5,
+        "mean_answer_confidence": 0.9999,
+        "ece": 0.4999,
+        "confusion": {
+          "architecture->review": 4,
+          "review->review": 4
+        }
+      },
+      "work": {
+        "n": 48,
+        "accuracy": 0.4167,
+        "mean_answer_confidence": 0.5501,
+        "ece": 0.1454,
+        "confusion": {
+          "architecture->architecture": 2,
+          "architecture->coupled": 1,
+          "architecture->demanding": 3,
+          "architecture->lookup": 1,
+          "architecture->routine": 1,
+          "coupled->architecture": 1,
+          "coupled->coupled": 3,
+          "coupled->demanding": 3,
+          "coupled->routine": 1,
+          "demanding->coupled": 4,
+          "demanding->lookup": 1,
+          "demanding->routine": 3,
+          "lookup->coupled": 1,
+          "lookup->lookup": 7,
+          "routine->coupled": 1,
+          "routine->routine": 7,
+          "visual->coupled": 2,
+          "visual->routine": 5,
+          "visual->visual": 1
+        }
+      }
+    }
+  },
+  "candidate": {
+    "version": 1,
+    "created_at": 1791474084.882965,
+    "checkpoint": "checkpoints/public-taskshape",
+    "checkpoint_sha256": "640f11f7ee9367819aa925e1635324bbbff2c42508ffc4841f44717ebec85686",
+    "device": "cpu",
+    "splits": {
+      "heldout": {
+        "dataset": "checkpoints/public-multilingual/public-routing-inputs/heldout.jsonl",
+        "dataset_sha256": "a838625de9d0c5d112c9dfb0a4121583a248a4861f7d3b95e9bbcbe51ea16a4f",
+        "rows": 56,
+        "seconds": 17.96,
+        "metrics": {
+          "n": 56,
+          "accuracy": 0.4286,
+          "mean_answer_confidence": 0.5474,
+          "ece": 0.1917,
+          "confusion": {
+            "architecture->architecture": 2,
+            "architecture->coupled": 1,
+            "architecture->demanding": 3,
+            "architecture->lookup": 1,
+            "architecture->review": 4,
+            "architecture->routine": 1,
+            "coupled->architecture": 1,
+            "coupled->coupled": 3,
+            "coupled->demanding": 3,
+            "coupled->routine": 1,
+            "demanding->coupled": 4,
+            "demanding->lookup": 1,
+            "demanding->routine": 3,
+            "lookup->coupled": 1,
+            "lookup->lookup": 7,
+            "review->review": 4,
+            "routine->coupled": 1,
+            "routine->routine": 7,
+            "visual->coupled": 2,
+            "visual->routine": 5,
+            "visual->visual": 1
+          }
+        },
+        "results": [
+          {
+            "id": "heldout-en-work-lookup-001",
+            "expected": "lookup",
+            "choice": "lookup",
+            "correct": true,
+            "answer_confidence": 0.9545,
+            "confidence": 0.86,
+            "probabilities": {
+              "lookup": 0.9545,
+              "routine": 0.016,
+              "demanding": 0.0059,
+              "visual": 0.0034,
+              "coupled": 0.0146,
+              "architecture": 0.0056
+            }
+          },
+          {
+            "id": "heldout-en-work-lookup-002",
+            "expected": "lookup",
+            "choice": "coupled",
+            "correct": false,
+            "answer_confidence": 0.3563,
+            "confidence": 0.1538,
+            "probabilities": {
+              "lookup": 0.3321,
+              "routine": 0.1175,
+              "demanding": 0.0573,
+              "visual": 0.0668,
+              "coupled": 0.3563,
+              "architecture": 0.0699
+            }
+          },
+          {
+            "id": "heldout-en-work-lookup-003",
+            "expected": "lookup",
+            "choice": "lookup",
+            "correct": true,
+            "answer_confidence": 0.9979,
+            "confidence": 0.9899,
+            "probabilities": {
+              "lookup": 0.9979,
+              "routine": 0.0003,
+              "demanding": 0.0009,
+              "visual": 0.0001,
+              "coupled": 0.0006,
+              "architecture": 0.0003
+            }
+          },
+          {
+            "id": "heldout-en-work-lookup-004",
+            "expected": "lookup",
+            "choice": "lookup",
+            "correct": true,
+            "answer_confidence": 0.7951,
+            "confidence": 0.5518,
+            "probabilities": {
+              "lookup": 0.7951,
+              "routine": 0.0487,
+              "demanding": 0.065,
+              "visual": 0.0109,
+              "coupled": 0.0611,
+              "architecture": 0.0192
+            }
+          },
+          {
+            "id": "heldout-en-work-routine-001",
+            "expected": "routine",
+            "choice": "routine",
+            "correct": true,
+            "answer_confidence": 0.6679,
+            "confidence": 0.4057,
+            "probabilities": {
+              "lookup": 0.0131,
+              "routine": 0.6679,
+              "demanding": 0.0894,
+              "visual": 0.0194,
+              "coupled": 0.1578,
+              "architecture": 0.0524
+            }
+          },
+          {
+            "id": "heldout-en-work-routine-002",
+            "expected": "routine",
+            "choice": "routine",
+            "correct": true,
+            "answer_confidence": 0.5703,
+            "confidence": 0.3363,
+            "probabilities": {
+              "lookup": 0.0233,
+              "routine": 0.5703,
+              "demanding": 0.0563,
+              "visual": 0.0319,
+              "coupled": 0.2641,
+              "architecture": 0.054
+            }
+          },
+          {
+            "id": "heldout-en-work-routine-003",
+            "expected": "routine",
+            "choice": "routine",
+            "correct": true,
+            "answer_confidence": 0.3894,
+            "confidence": 0.193,
+            "probabilities": {
+              "lookup": 0.0279,
+              "routine": 0.3894,
+              "demanding": 0.072,
+              "visual": 0.0374,
+              "coupled": 0.1762,
+              "architecture": 0.2972
+            }
+          },
+          {
+            "id": "heldout-en-work-routine-004",
+            "expected": "routine",
+            "choice": "coupled",
+            "correct": false,
+            "answer_confidence": 0.4225,
+            "confidence": 0.2401,
+            "probabilities": {
+              "lookup": 0.0189,
+              "routine": 0.3398,
+              "demanding": 0.1125,
+              "visual": 0.0431,
+              "coupled": 0.4225,
+              "architecture": 0.0632
+            }
+          },
+          {
+            "id": "heldout-en-work-demanding-001",
+            "expected": "demanding",
+            "choice": "routine",
+            "correct": false,
+            "answer_confidence": 0.3929,
+            "confidence": 0.1813,
+            "probabilities": {
+              "lookup": 0.0229,
+              "routine": 0.3929,
+              "demanding": 0.2348,
+              "visual": 0.0488,
+              "coupled": 0.2295,
+              "architecture": 0.0713
+            }
+          },
+          {
+            "id": "heldout-en-work-demanding-002",
+            "expected": "demanding",
+            "choice": "coupled",
+            "correct": false,
+            "answer_confidence": 0.3263,
+            "confidence": 0.0996,
+            "probabilities": {
+              "lookup": 0.0307,
+              "routine": 0.2531,
+              "demanding": 0.1164,
+              "visual": 0.1497,
+              "coupled": 0.3263,
+              "architecture": 0.1238
+            }
+          },
+          {
+            "id": "heldout-en-work-demanding-003",
+            "expected": "demanding",
+            "choice": "lookup",
+            "correct": false,
+            "answer_confidence": 0.2872,
+            "confidence": 0.0768,
+            "probabilities": {
+              "lookup": 0.2872,
+              "routine": 0.1287,
+              "demanding": 0.1541,
+              "visual": 0.0432,
+              "coupled": 0.2655,
+              "architecture": 0.1214
+            }
+          },
+          {
+            "id": "heldout-en-work-demanding-004",
+            "expected": "demanding",
+            "choice": "coupled",
+            "correct": false,
+            "answer_confidence": 0.3752,
+            "confidence": 0.1784,
+            "probabilities": {
+              "lookup": 0.0311,
+              "routine": 0.3349,
+              "demanding": 0.0882,
+              "visual": 0.0667,
+              "coupled": 0.3752,
+              "architecture": 0.1039
+            }
+          },
+          {
+            "id": "heldout-en-work-visual-001",
+            "expected": "visual",
+            "choice": "routine",
+            "correct": false,
+            "answer_confidence": 0.3001,
+            "confidence": 0.0789,
+            "probabilities": {
+              "lookup": 0.0304,
+              "routine": 0.3001,
+              "demanding": 0.129,
+              "visual": 0.1542,
+              "coupled": 0.2231,
+              "architecture": 0.1633
+            }
+          },
+          {
+            "id": "heldout-en-work-visual-002",
+            "expected": "visual",
+            "choice": "routine",
+            "correct": false,
+            "answer_confidence": 0.3381,
+            "confidence": 0.1547,
+            "probabilities": {
+              "lookup": 0.0278,
+              "routine": 0.3381,
+              "demanding": 0.1224,
+              "visual": 0.1543,
+              "coupled": 0.3126,
+              "architecture": 0.0449
+            }
+          },
+          {
+            "id": "heldout-en-work-visual-003",
+            "expected": "visual",
+            "choice": "coupled",
+            "correct": false,
+            "answer_confidence": 0.3388,
+            "confidence": 0.1442,
+            "probabilities": {
+              "lookup": 0.0991,
+              "routine": 0.305,
+              "demanding": 0.1674,
+              "visual": 0.055,
+              "coupled": 0.3388,
+              "architecture": 0.0348
+            }
+          },
+          {
+            "id": "heldout-en-work-visual-004",
+            "expected": "visual",
+            "choice": "coupled",
+            "correct": false,
+            "answer_confidence": 0.4313,
+            "confidence": 0.2172,
+            "probabilities": {
+              "lookup": 0.0105,
+              "routine": 0.2058,
+              "demanding": 0.2367,
+              "visual": 0.0734,
+              "coupled": 0.4313,
+              "architecture": 0.0424
+            }
+          },
+          {
+            "id": "heldout-en-work-coupled-001",
+            "expected": "coupled",
+            "choice": "architecture",
+            "correct": false,
+            "answer_confidence": 0.325,
+            "confidence": 0.173,
+            "probabilities": {
+              "lookup": 0.0323,
+              "routine": 0.2734,
+              "demanding": 0.0456,
+              "visual": 0.0536,
+              "coupled": 0.2701,
+              "architecture": 0.325
+            }
+          },
+          {
+            "id": "heldout-en-work-coupled-002",
+            "expected": "coupled",
+            "choice": "demanding",
+            "correct": false,
+            "answer_confidence": 0.3082,
+            "confidence": 0.1016,
+            "probabilities": {
+              "lookup": 0.1894,
+              "routine": 0.091,
+              "demanding": 0.3082,
+              "visual": 0.0586,
+              "coupled": 0.2799,
+              "architecture": 0.073
+            }
+          },
+          {
+            "id": "heldout-en-work-coupled-003",
+            "expected": "coupled",
+            "choice": "coupled",
+            "correct": true,
+            "answer_confidence": 0.3698,
+            "confidence": 0.1238,
+            "probabilities": {
+              "lookup": 0.032,
+              "routine": 0.2452,
+              "demanding": 0.1539,
+              "visual": 0.101,
+              "coupled": 0.3698,
+              "architecture": 0.0981
+            }
+          },
+          {
+            "id": "heldout-en-work-coupled-004",
+            "expected": "coupled",
+            "choice": "demanding",
+            "correct": false,
+            "answer_confidence": 0.3296,
+            "confidence": 0.0931,
+            "probabilities": {
+              "lookup": 0.044,
+              "routine": 0.1746,
+              "demanding": 0.3296,
+              "visual": 0.2195,
+              "coupled": 0.1587,
+              "architecture": 0.0736
+            }
+          },
+          {
+            "id": "heldout-en-work-architecture-001",
+            "expected": "architecture",
+            "choice": "demanding",
+            "correct": false,
+            "answer_confidence": 0.4478,
+            "confidence": 0.1728,
+            "probabilities": {
+              "lookup": 0.0196,
+              "routine": 0.1357,
+              "demanding": 0.4478,
+              "visual": 0.0766,
+              "coupled": 0.1984,
+              "architecture": 0.122
+            }
+          },
+          {
+            "id": "heldout-en-work-architecture-002",
+            "expected": "architecture",
+            "choice": "demanding",
+            "correct": false,
+            "answer_confidence": 0.2498,
+            "confidence": 0.0748,
+            "probabilities": {
+              "lookup": 0.0267,
+              "routine": 0.2308,
+              "demanding": 0.2498,
+              "visual": 0.212,
+              "coupled": 0.117,
+              "architecture": 0.1637
+            }
+          },
+          {
+            "id": "heldout-en-work-architecture-003",
+            "expected": "architecture",
+            "choice": "architecture",
+            "correct": true,
+            "answer_confidence": 0.828,
+            "confidence": 0.6133,
+            "probabilities": {
+              "lookup": 0.0154,
+              "routine": 0.0777,
+              "demanding": 0.0265,
+              "visual": 0.0084,
+              "coupled": 0.0439,
+              "architecture": 0.828
+            }
+          },
+          {
+            "id": "heldout-en-work-architecture-004",
+            "expected": "architecture",
+            "choice": "architecture",
+            "correct": true,
+            "answer_confidence": 0.4252,
+            "confidence": 0.1893,
+            "probabilities": {
+              "lookup": 0.0146,
+              "routine": 0.0899,
+              "demanding": 0.2725,
+              "visual": 0.088,
+              "coupled": 0.1099,
+              "architecture": 0.4252
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-lookup-001",
+            "expected": "lookup",
+            "choice": "lookup",
+            "correct": true,
+            "answer_confidence": 0.92,
+            "confidence": 0.7844,
+            "probabilities": {
+              "lookup": 0.92,
+              "routine": 0.0149,
+              "demanding": 0.0219,
+              "visual": 0.0028,
+              "coupled": 0.0343,
+              "architecture": 0.006
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-lookup-002",
+            "expected": "lookup",
+            "choice": "lookup",
+            "correct": true,
+            "answer_confidence": 0.3486,
+            "confidence": 0.0755,
+            "probabilities": {
+              "lookup": 0.3486,
+              "routine": 0.1405,
+              "demanding": 0.0753,
+              "visual": 0.1355,
+              "coupled": 0.2061,
+              "architecture": 0.0939
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-lookup-003",
+            "expected": "lookup",
+            "choice": "lookup",
+            "correct": true,
+            "answer_confidence": 0.58,
+            "confidence": 0.2931,
+            "probabilities": {
+              "lookup": 0.58,
+              "routine": 0.1682,
+              "demanding": 0.0906,
+              "visual": 0.0104,
+              "coupled": 0.0926,
+              "architecture": 0.0582
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-lookup-004",
+            "expected": "lookup",
+            "choice": "lookup",
+            "correct": true,
+            "answer_confidence": 0.3995,
+            "confidence": 0.1831,
+            "probabilities": {
+              "lookup": 0.3995,
+              "routine": 0.1009,
+              "demanding": 0.3026,
+              "visual": 0.0278,
+              "coupled": 0.1181,
+              "architecture": 0.0511
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-routine-001",
+            "expected": "routine",
+            "choice": "routine",
+            "correct": true,
+            "answer_confidence": 0.4689,
+            "confidence": 0.2949,
+            "probabilities": {
+              "lookup": 0.0135,
+              "routine": 0.4689,
+              "demanding": 0.3022,
+              "visual": 0.0221,
+              "coupled": 0.1615,
+              "architecture": 0.0318
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-routine-002",
+            "expected": "routine",
+            "choice": "routine",
+            "correct": true,
+            "answer_confidence": 0.5572,
+            "confidence": 0.266,
+            "probabilities": {
+              "lookup": 0.062,
+              "routine": 0.5572,
+              "demanding": 0.1431,
+              "visual": 0.0356,
+              "coupled": 0.1647,
+              "architecture": 0.0375
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-routine-003",
+            "expected": "routine",
+            "choice": "routine",
+            "correct": true,
+            "answer_confidence": 0.5868,
+            "confidence": 0.2758,
+            "probabilities": {
+              "lookup": 0.076,
+              "routine": 0.5868,
+              "demanding": 0.114,
+              "visual": 0.0282,
+              "coupled": 0.1331,
+              "architecture": 0.0619
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-routine-004",
+            "expected": "routine",
+            "choice": "routine",
+            "correct": true,
+            "answer_confidence": 0.5119,
+            "confidence": 0.3168,
+            "probabilities": {
+              "lookup": 0.0079,
+              "routine": 0.5119,
+              "demanding": 0.229,
+              "visual": 0.0172,
+              "coupled": 0.2006,
+              "architecture": 0.0333
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-demanding-001",
+            "expected": "demanding",
+            "choice": "coupled",
+            "correct": false,
+            "answer_confidence": 0.3505,
+            "confidence": 0.0836,
+            "probabilities": {
+              "lookup": 0.046,
+              "routine": 0.1783,
+              "demanding": 0.1681,
+              "visual": 0.1439,
+              "coupled": 0.3505,
+              "architecture": 0.1133
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-demanding-002",
+            "expected": "demanding",
+            "choice": "routine",
+            "correct": false,
+            "answer_confidence": 0.372,
+            "confidence": 0.116,
+            "probabilities": {
+              "lookup": 0.0198,
+              "routine": 0.372,
+              "demanding": 0.1512,
+              "visual": 0.1374,
+              "coupled": 0.1906,
+              "architecture": 0.129
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-demanding-003",
+            "expected": "demanding",
+            "choice": "coupled",
+            "correct": false,
+            "answer_confidence": 0.4223,
+            "confidence": 0.1434,
+            "probabilities": {
+              "lookup": 0.0634,
+              "routine": 0.142,
+              "demanding": 0.2253,
+              "visual": 0.0659,
+              "coupled": 0.4223,
+              "architecture": 0.0811
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-demanding-004",
+            "expected": "demanding",
+            "choice": "routine",
+            "correct": false,
+            "answer_confidence": 0.4443,
+            "confidence": 0.2382,
+            "probabilities": {
+              "lookup": 0.0392,
+              "routine": 0.4443,
+              "demanding": 0.1765,
+              "visual": 0.0278,
+              "coupled": 0.2778,
+              "architecture": 0.0344
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-visual-001",
+            "expected": "visual",
+            "choice": "visual",
+            "correct": true,
+            "answer_confidence": 0.363,
+            "confidence": 0.1349,
+            "probabilities": {
+              "lookup": 0.0136,
+              "routine": 0.2141,
+              "demanding": 0.198,
+              "visual": 0.363,
+              "coupled": 0.1197,
+              "architecture": 0.0916
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-visual-002",
+            "expected": "visual",
+            "choice": "routine",
+            "correct": false,
+            "answer_confidence": 0.4043,
+            "confidence": 0.1803,
+            "probabilities": {
+              "lookup": 0.0539,
+              "routine": 0.4043,
+              "demanding": 0.0913,
+              "visual": 0.275,
+              "coupled": 0.1534,
+              "architecture": 0.022
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-visual-003",
+            "expected": "visual",
+            "choice": "routine",
+            "correct": false,
+            "answer_confidence": 0.619,
+            "confidence": 0.3593,
+            "probabilities": {
+              "lookup": 0.0169,
+              "routine": 0.619,
+              "demanding": 0.1295,
+              "visual": 0.031,
+              "coupled": 0.1733,
+              "architecture": 0.0304
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-visual-004",
+            "expected": "visual",
+            "choice": "routine",
+            "correct": false,
+            "answer_confidence": 0.5291,
+            "confidence": 0.2406,
+            "probabilities": {
+              "lookup": 0.0392,
+              "routine": 0.5291,
+              "demanding": 0.1039,
+              "visual": 0.1921,
+              "coupled": 0.104,
+              "architecture": 0.0316
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-coupled-001",
+            "expected": "coupled",
+            "choice": "coupled",
+            "correct": true,
+            "answer_confidence": 0.6729,
+            "confidence": 0.4133,
+            "probabilities": {
+              "lookup": 0.0122,
+              "routine": 0.157,
+              "demanding": 0.0783,
+              "visual": 0.0156,
+              "coupled": 0.6729,
+              "architecture": 0.064
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-coupled-002",
+            "expected": "coupled",
+            "choice": "coupled",
+            "correct": true,
+            "answer_confidence": 0.486,
+            "confidence": 0.2226,
+            "probabilities": {
+              "lookup": 0.0569,
+              "routine": 0.1071,
+              "demanding": 0.2441,
+              "visual": 0.025,
+              "coupled": 0.486,
+              "architecture": 0.0809
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-coupled-003",
+            "expected": "coupled",
+            "choice": "demanding",
+            "correct": false,
+            "answer_confidence": 0.6299,
+            "confidence": 0.3797,
+            "probabilities": {
+              "lookup": 0.0105,
+              "routine": 0.1709,
+              "demanding": 0.6299,
+              "visual": 0.0216,
+              "coupled": 0.1297,
+              "architecture": 0.0374
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-coupled-004",
+            "expected": "coupled",
+            "choice": "routine",
+            "correct": false,
+            "answer_confidence": 0.3473,
+            "confidence": 0.1334,
+            "probabilities": {
+              "lookup": 0.0235,
+              "routine": 0.3473,
+              "demanding": 0.251,
+              "visual": 0.0812,
+              "coupled": 0.2024,
+              "architecture": 0.0945
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-architecture-001",
+            "expected": "architecture",
+            "choice": "coupled",
+            "correct": false,
+            "answer_confidence": 0.4982,
+            "confidence": 0.2215,
+            "probabilities": {
+              "lookup": 0.0264,
+              "routine": 0.1414,
+              "demanding": 0.1373,
+              "visual": 0.0292,
+              "coupled": 0.4982,
+              "architecture": 0.1675
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-architecture-002",
+            "expected": "architecture",
+            "choice": "lookup",
+            "correct": false,
+            "answer_confidence": 0.2045,
+            "confidence": 0.0166,
+            "probabilities": {
+              "lookup": 0.2045,
+              "routine": 0.1525,
+              "demanding": 0.1964,
+              "visual": 0.0895,
+              "coupled": 0.1716,
+              "architecture": 0.1854
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-architecture-003",
+            "expected": "architecture",
+            "choice": "routine",
+            "correct": false,
+            "answer_confidence": 0.6569,
+            "confidence": 0.3933,
+            "probabilities": {
+              "lookup": 0.0259,
+              "routine": 0.6569,
+              "demanding": 0.0543,
+              "visual": 0.0157,
+              "coupled": 0.07,
+              "architecture": 0.1772
+            }
+          },
+          {
+            "id": "heldout-ptbr-work-architecture-004",
+            "expected": "architecture",
+            "choice": "demanding",
+            "correct": false,
+            "answer_confidence": 0.4238,
+            "confidence": 0.171,
+            "probabilities": {
+              "lookup": 0.0186,
+              "routine": 0.1246,
+              "demanding": 0.4238,
+              "visual": 0.0584,
+              "coupled": 0.1557,
+              "architecture": 0.2189
+            }
+          },
+          {
+            "id": "heldout-en-review-review-001",
+            "expected": "review",
+            "choice": "review",
+            "correct": true,
+            "answer_confidence": 0.9402,
+            "confidence": 0.6735,
+            "probabilities": {
+              "review": 0.9402,
+              "architecture": 0.0598
+            }
+          },
+          {
+            "id": "heldout-en-review-review-002",
+            "expected": "review",
+            "choice": "review",
+            "correct": true,
+            "answer_confidence": 0.9477,
+            "confidence": 0.7038,
+            "probabilities": {
+              "review": 0.9477,
+              "architecture": 0.0523
+            }
+          },
+          {
+            "id": "heldout-en-review-architecture-001",
+            "expected": "architecture",
+            "choice": "review",
+            "correct": false,
+            "answer_confidence": 0.9554,
+            "confidence": 0.7371,
+            "probabilities": {
+              "review": 0.9554,
+              "architecture": 0.0446
+            }
+          },
+          {
+            "id": "heldout-en-review-architecture-002",
+            "expected": "architecture",
+            "choice": "review",
+            "correct": false,
+            "answer_confidence": 0.9309,
+            "confidence": 0.6373,
+            "probabilities": {
+              "review": 0.9309,
+              "architecture": 0.0691
+            }
+          },
+          {
+            "id": "heldout-ptbr-review-review-001",
+            "expected": "review",
+            "choice": "review",
+            "correct": true,
+            "answer_confidence": 0.9797,
+            "confidence": 0.8569,
+            "probabilities": {
+              "review": 0.9797,
+              "architecture": 0.0203
+            }
+          },
+          {
+            "id": "heldout-ptbr-review-review-002",
+            "expected": "review",
+            "choice": "review",
+            "correct": true,
+            "answer_confidence": 0.9803,
+            "confidence": 0.8602,
+            "probabilities": {
+              "review": 0.9803,
+              "architecture": 0.0197
+            }
+          },
+          {
+            "id": "heldout-ptbr-review-architecture-001",
+            "expected": "architecture",
+            "choice": "review",
+            "correct": false,
+            "answer_confidence": 0.9374,
+            "confidence": 0.6625,
+            "probabilities": {
+              "review": 0.9374,
+              "architecture": 0.0626
+            }
+          },
+          {
+            "id": "heldout-ptbr-review-architecture-002",
+            "expected": "architecture",
+            "choice": "review",
+            "correct": false,
+            "answer_confidence": 0.9564,
+            "confidence": 0.7415,
+            "probabilities": {
+              "review": 0.9564,
+              "architecture": 0.0436
+            }
+          }
+        ]
+      }
+    },
+    "laya_config": {
+      "model_name": "laya-taskshape",
+      "max_len": 1024,
+      "head_max_len": 320,
+      "temperature": [
+        1.3321986198425293,
+        1.0,
+        1.0
+      ],
+      "temperature_by_options": {
+        "choice:6-10": 0.5
+      },
+      "fine_tuned": true,
+      "taskshape": {
+        "base_checkpoint": "checkpoints/public-multilingual",
+        "base_sha256": "9d628fd971b700382ac6f65920a86f149777b2e748e0c955fb3b19695aa8f204",
+        "train_dataset": "checkpoints/public-multilingual/public-routing-inputs/train.jsonl",
+        "train_sha256": "4a19ea34d00ee5e9b9b4feb7766220fd5c2ba66b514169ec7811b9ce64f029df",
+        "seed": 20261008,
+        "train_top_layers": 0,
+        "finished_at": 1791474010.70743
+      }
+    },
+    "by_language": {
+      "en": {
+        "n": 28,
+        "accuracy": 0.3929,
+        "mean_answer_confidence": 0.5358,
+        "ece": 0.2242,
+        "confusion": {
+          "architecture->architecture": 2,
+          "architecture->demanding": 2,
+          "architecture->review": 2,
+          "coupled->architecture": 1,
+          "coupled->coupled": 1,
+          "coupled->demanding": 2,
+          "demanding->coupled": 2,
+          "demanding->lookup": 1,
+          "demanding->routine": 1,
+          "lookup->coupled": 1,
+          "lookup->lookup": 3,
+          "review->review": 2,
+          "routine->coupled": 1,
+          "routine->routine": 3,
+          "visual->coupled": 2,
+          "visual->routine": 2
+        }
+      },
+      "pt-BR": {
+        "n": 28,
+        "accuracy": 0.4643,
+        "mean_answer_confidence": 0.559,
+        "ece": 0.2414,
+        "confusion": {
+          "architecture->coupled": 1,
+          "architecture->demanding": 1,
+          "architecture->lookup": 1,
+          "architecture->review": 2,
+          "architecture->routine": 1,
+          "coupled->coupled": 2,
+          "coupled->demanding": 1,
+          "coupled->routine": 1,
+          "demanding->coupled": 2,
+          "demanding->routine": 2,
+          "lookup->lookup": 4,
+          "review->review": 2,
+          "routine->routine": 4,
+          "visual->routine": 3,
+          "visual->visual": 1
+        }
+      }
+    },
+    "by_phase": {
+      "review": {
+        "n": 8,
+        "accuracy": 0.5,
+        "mean_answer_confidence": 0.9535,
+        "ece": 0.4535,
+        "confusion": {
+          "architecture->review": 4,
+          "review->review": 4
+        }
+      },
+      "work": {
+        "n": 48,
+        "accuracy": 0.4167,
+        "mean_answer_confidence": 0.4797,
+        "ece": 0.1534,
+        "confusion": {
+          "architecture->architecture": 2,
+          "architecture->coupled": 1,
+          "architecture->demanding": 3,
+          "architecture->lookup": 1,
+          "architecture->routine": 1,
+          "coupled->architecture": 1,
+          "coupled->coupled": 3,
+          "coupled->demanding": 3,
+          "coupled->routine": 1,
+          "demanding->coupled": 4,
+          "demanding->lookup": 1,
+          "demanding->routine": 3,
+          "lookup->coupled": 1,
+          "lookup->lookup": 7,
+          "routine->coupled": 1,
+          "routine->routine": 7,
+          "visual->coupled": 2,
+          "visual->routine": 5,
+          "visual->visual": 1
+        }
+      }
+    }
+  },
+  "comparison": {
+    "wins": false,
+    "rows": [
+      {
+        "split": "heldout",
+        "n": 56,
+        "baseline_accuracy": 0.4286,
+        "candidate_accuracy": 0.4286,
+        "accuracy_gain": 0.0,
+        "baseline_ece": 0.1941,
+        "candidate_ece": 0.1917,
+        "ece_delta": -0.0024,
+        "baseline_confidence": 0.6144,
+        "candidate_confidence": 0.5474,
+        "candidate_overconfident": true,
+        "same_dataset": true
+      }
+    ],
+    "baseline": "checkpoints/public-multilingual",
+    "candidate": "checkpoints/public-taskshape"
+  },
+  "adoption_gate": {
+    "passed": false,
+    "reason": "Candidate does not win on every split; configuration unchanged"
+  },
+  "rubric_reference": {
+    "overall": {
+      "n": 56,
+      "correct": 29,
+      "accuracy": 0.5179
+    },
+    "by_language": {
+      "en": {
+        "n": 28,
+        "correct": 18,
+        "accuracy": 0.6429
+      },
+      "pt-BR": {
+        "n": 28,
+        "correct": 11,
+        "accuracy": 0.3929
+      }
+    }
+  },
+  "head_budget": {
+    "head_max_len": 320,
+    "max_len": 1024,
+    "criteria": {
+      "lookup": {
+        "tokens": 21,
+        "within_cap": true
+      },
+      "routine": {
+        "tokens": 36,
+        "within_cap": true
+      },
+      "demanding": {
+        "tokens": 33,
+        "within_cap": true
+      },
+      "visual": {
+        "tokens": 21,
+        "within_cap": true
+      },
+      "coupled": {
+        "tokens": 32,
+        "within_cap": true
+      },
+      "review": {
+        "tokens": 21,
+        "within_cap": true
+      },
+      "architecture": {
+        "tokens": 26,
+        "within_cap": true
+      }
+    },
+    "questions": {
+      "work": {
+        "options": 6,
+        "options_distinct": 6,
+        "head_tokens": 215,
+        "instruction_tokens_kept": 37,
+        "instruction_tokens_full": 37,
+        "state_room_tokens": 808
+      },
+      "review": {
+        "options": 2,
+        "options_distinct": 2,
+        "head_tokens": 89,
+        "instruction_tokens_kept": 37,
+        "instruction_tokens_full": 37,
+        "state_room_tokens": 934
+      }
+    },
+    "all_criteria_within_cap": true,
+    "all_options_distinct": true,
+    "all_instructions_whole": true
+  }
+}

@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "python": "3.12.11",
+  "uv": {
+    "linux-x64": {
+      "url": "https://github.com/astral-sh/uv/releases/download/0.12.23/uv-x86_64-unknown-linux-gnu.tar.gz",
+      "sha256": "9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6",
+      "executable": "uv-x86_64-unknown-linux-gnu/uv"
+    },
+    "linux-arm64": {
+      "url": "https://github.com/astral-sh/uv/releases/download/0.12.23/uv-aarch64-unknown-linux-gnu.tar.gz",
+      "sha256": "6524bd338177ed50d035d39354e12545e993bbeba2ecbddf0480c5b3a81d313f",
+      "executable": "uv-aarch64-unknown-linux-gnu/uv"
+    },
+    "macos-arm64": {
+      "url": "https://github.com/astral-sh/uv/releases/download/0.12.23/uv-aarch64-apple-darwin.tar.gz",
+      "sha256": "50487ae565ccd96e499056b4674d438f4c53170202617b4c759defe0c6a1b544",
+      "executable": "uv-aarch64-apple-darwin/uv"
+    },
+    "windows-x64": {
+      "url": "https://github.com/astral-sh/uv/releases/download/0.12.23/uv-x86_64-pc-windows-msvc.zip",
+      "sha256": "75d05de6762778c31ee183398de7dd15093fad0ed90b1f236d8205ea5ec00c90",
+      "executable": "uv.exe"
+    },
+    "windows-arm64": {
+      "url": "https://github.com/astral-sh/uv/releases/download/0.12.23/uv-aarch64-pc-windows-msvc.zip",
+      "sha256": "13294e232ececbe709c06b74e6ced06f2a225ea5591476685362f22be56a50d5",
+      "executable": "uv.exe"
+    }
+  },
+  "model": {
+    "repository": "convaiinnovations/laya",
+    "revision": "7b928d828b7b0e022f929d9bd2e44165aa270148",
+    "license": "apache-2.0",
+    "attribution": "Laya by ConvAI Innovations; Hugging Face repository convaiinnovations/laya at the pinned revision.",
+    "source": "https://huggingface.co/convaiinnovations/laya/tree/7b928d828b7b0e022f929d9bd2e44165aa270148",
+    "files": [
+      {
+        "path": "README.md",
+        "url": "https://huggingface.co/convaiinnovations/laya/resolve/7b928d828b7b0e022f929d9bd2e44165aa270148/README.md",
+        "sha256": "00355613796b3f5860b0d5b20392381d26580ec242e04a1fd150c7f116858602",
+        "size": 23187
+      },
+      {
+        "path": "multilingual/encoder/config.json",
+        "url": "https://huggingface.co/convaiinnovations/laya/resolve/7b928d828b7b0e022f929d9bd2e44165aa270148/multilingual/encoder/config.json",
+        "sha256": "83f6916d13ef0f556ac461f28308dc2bffa7ebeadee8ec9e2db5812020ea5bb4",
+        "size": 1938
+      },
+      {
+        "path": "multilingual/rl_agent_config.json",
+        "url": "https://huggingface.co/convaiinnovations/laya/resolve/7b928d828b7b0e022f929d9bd2e44165aa270148/multilingual/rl_agent_config.json",
+        "sha256": "25061739243b617ad88d1219ba6f8a9c86c5881ca28df024fa2d9b3b2fcc30c6",
+        "size": 472
+      },
+      {
+        "path": "multilingual/tokenizer/tokenizer_config.json",
+        "url": "https://huggingface.co/convaiinnovations/laya/resolve/7b928d828b7b0e022f929d9bd2e44165aa270148/multilingual/tokenizer/tokenizer_config.json",
+        "sha256": "6c6b2d8e3c84ce0e671c129cd6b374b235d6f9863042a5836358d00a89bbb5a1",
+        "size": 524
+      },
+      {
+        "path": "multilingual/tokenizer/tokenizer.json",
+        "url": "https://huggingface.co/convaiinnovations/laya/resolve/7b928d828b7b0e022f929d9bd2e44165aa270148/multilingual/tokenizer/tokenizer.json",
+        "sha256": "609d8f4c067cd3950f88594c5a802616cea245823836ef5848ee4fc40aab5b6f",
+        "size": 34363188
+      },
+      {
+        "path": "multilingual/model.safetensors",
+        "url": "https://huggingface.co/convaiinnovations/laya/resolve/7b928d828b7b0e022f929d9bd2e44165aa270148/multilingual/model.safetensors",
+        "sha256": "9d628fd971b700382ac6f65920a86f149777b2e748e0c955fb3b19695aa8f204",
+        "size": 643835514
+      }
+    ],
+    "absentFilesChecked": [
+      "LICENSE",
+      "LICENSE.txt",
+      "NOTICE",
+      "multilingual/tokenizer/special_tokens_map.json"
+    ]
+  },
+  "runtime": {
+    "requirements": "runtime/requirements.lock",
+    "uvVersion": "0.12.23",
+    "install": {
+      "linux": "uv pip install --python <python> --require-hashes --only-binary :all: --torch-backend cpu -r runtime/requirements.lock",
+      "windows": "uv pip install --python <python> --require-hashes --only-binary :all: --torch-backend cpu -r runtime/requirements.lock",
+      "macos": "uv pip install --python <python> --require-hashes --only-binary :all: -r runtime/requirements.lock"
+    },
+    "supportedPlatforms": [
+      "linux-x64",
+      "linux-arm64",
+      "macos-arm64",
+      "windows-x64",
+      "windows-arm64"
+    ],
+    "unsupportedPlatforms": [
+      "macos-x64: PyTorch has no compatible Python 3.12 macOS x86_64 wheel for the pinned CPU runtime in uv dry-run resolution.",
+      "linux-musl/alpine",
+      "windows-x86"
+    ],
+    "notes": [
+      "Do not pass --torch-backend cpu for macOS installs; uv maps the macOS torch pin incorrectly when that backend is forced.",
+      "Large model and tokenizer hashes are Hugging Face LFS SHA-256 oids from the pinned tree; small JSON and README files were downloaded and hashed."
+    ]
+  },
+  "sources": {
+    "layaPypi": "https://pypi.org/project/laya/0.4.0/",
+    "layaModel": "https://huggingface.co/convaiinnovations/laya",
+    "layaTreeApi": "https://huggingface.co/api/models/convaiinnovations/laya/tree/7b928d828b7b0e022f929d9bd2e44165aa270148?recursive=1&expand=true",
+    "uvRelease": "https://github.com/astral-sh/uv/releases/tag/0.12.23",
+    "uvChecksums": "https://github.com/astral-sh/uv/releases/download/0.12.23/sha256.sum"
+  }
+}

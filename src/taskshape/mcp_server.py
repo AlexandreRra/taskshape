@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import Path
 import sys
 
 from . import lab as labmod
@@ -17,10 +18,26 @@ from .catalog import load_models, load_profiles
 from .policy import table
 from .router import HeuristicBackend, LayaBackend, route
 
+HERE = Path(__file__).resolve().parent
+
+
+def _default_data(name: str) -> Path | None:
+    for base in (HERE / "data", HERE.parent.parent.parent / "catalog"):
+        path = base / name
+        if path.exists():
+            return path
+    return None
+
+
+DEFAULT_CATALOG = _default_data("models.json")
+DEFAULT_PROFILES = _default_data("profiles.example.json")
+
 
 class Service:
     def __init__(self, profiles_path, catalog_path=None, config_path=None, records_path=None, decisions_path=None,
                  backend="auto", device="cpu"):
+        catalog_path = catalog_path or DEFAULT_CATALOG
+        profiles_path = profiles_path or DEFAULT_PROFILES
         self.models = load_models(catalog_path) if catalog_path else None
         self.profiles = load_profiles(profiles_path, self.models)
         self.config = labmod.load_config(config_path) if config_path else {}
@@ -101,8 +118,8 @@ def build_server(service: Service):
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="taskshape-mcp", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--profiles", required=True)
-    parser.add_argument("--catalog")
+    parser.add_argument("--profiles", default=DEFAULT_PROFILES)
+    parser.add_argument("--catalog", default=DEFAULT_CATALOG)
     parser.add_argument("--config")
     parser.add_argument("--records")
     parser.add_argument("--decisions")

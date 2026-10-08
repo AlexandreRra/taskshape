@@ -32,4 +32,4 @@ jobs:
       - name: Test Python core
         run: python -m unittest discover -s tests
       - name: Test shared and installed plugin hooks
-        run: node --experimental-strip-types --test plugins/shared/harness.test.ts plugins/copilot/hooks/harness.test.ts plugins/vscode/hooks/harness.test.ts
+        run: node --experimental-strip-types --test plugins/shared/harness.test.ts plugins/copilot/hooks/harness.test.ts plugins/vscode/hooks/harness.test.ts plugins/shared/runtime.test.ts

@@ -1,7 +1,7 @@
 {
   "name": "taskshape",
-  "version": "0.1.0",
-  "description": "Cost-aware routing for every sub-agent launch in GitHub Copilot CLI: classifies the task shape and picks the cheapest adequate model and reasoning effort. Suggest mode logs; enforce mode rewrites the task tool's model and reasoning_effort.",
+  "version": "0.2.0",
+  "description": "Route sub-agent launches with local Laya and the configured model profiles. The plugin prepares its private Python runtime and checkpoint automatically.",
   "author": {
     "name": "Alexandre Amorim"
   },

@@ -2,20 +2,23 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import {
   CATALOG_RETRY, CATALOG_TTL, DEFAULT_CONFIG, type Decide, applyCatalog, catalogFresh, detectHarness, ensureConfig, loadProfilesFrom,
-  localCandidates, multiplierCeiling, outcomeFor, parseAcpModels, parseConfig, popPending, routeEmbedded, vscodeModelName, writeJson,
+  localCandidates, multiplierCeiling, outcomeFor, parseAcpModels, parseConfig, popPending, routeClassified, routeEmbedded, vscodeModelName, writeJson,
 } from './harness.ts'
 import { discoverModels } from './discover.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const profilesPath = [join(here, '..', 'profiles.copilot.json'), join(here, 'profiles.copilot.json')].find(p => existsSync(p)) as string
+const nodeAssetsPath = [join(here, '..', 'runtime', 'node-assets.tsv'), join(here, '..', '..', 'runtime', 'node-assets.tsv')].find(p => existsSync(p)) as string
 const table = loadProfilesFrom(readFileSync(profilesPath, 'utf8'))
 const decide: Decide = (prompt, candidates) => routeEmbedded(prompt, 'work', table, 'default', candidates)
+const layaDecide: Decide = (prompt, candidates) => routeClassified(prompt, 'work', table, 'default', 'coupled', 0.91, 'laya', candidates, { coupled: 0.91 })
 const enforce = { ...DEFAULT_CONFIG, mode: 'enforce' as const }
 const suggest = { ...DEFAULT_CONFIG, mode: 'suggest' as const }
 const task = (prompt: string, extra: Record<string, unknown> = {}) => ({
@@ -30,6 +33,16 @@ const TYPO = 'Fix the typo in README and bump the version'
 const SECRET_PROMPT = 'SENSITIVE_PROMPT_do_not_log_7fd45e98 owns payments.ts and tests; migration must be idempotent'
 const SECRET_DESCRIPTION = 'SENSITIVE_DESCRIPTION_do_not_log_d4c5b6a7'
 const POSIX = process.platform !== 'win32'
+const platformKey = (): string => {
+  if (process.platform === 'linux' && process.arch === 'x64') return 'linux-x64'
+  if (process.platform === 'linux' && process.arch === 'arm64') return 'linux-arm64'
+  if (process.platform === 'darwin' && process.arch === 'x64') return 'darwin-x64'
+  if (process.platform === 'darwin' && process.arch === 'arm64') return 'darwin-arm64'
+  if (process.platform === 'win32' && process.arch === 'x64') return 'win-x64'
+  if (process.platform === 'win32' && process.arch === 'arm64') return 'win-arm64'
+  if (process.platform === 'win32' && process.arch === 'ia32') return 'win-x86'
+  return 'unsupported'
+}
 
 // The ACP `session/new` model list exactly as Copilot CLI 1.0.92 shapes it (auto twice, usage as "0.33x", enablement).
 const ACP_MODELS = [
@@ -60,18 +73,22 @@ const fakeCopilot = (dir: string, models: unknown[] | 'hang'): string => {
 
 test('config: file values, env overrides, safe defaults', () => {
   assert.deepEqual(parseConfig(undefined), DEFAULT_CONFIG)
-  const fromFile = parseConfig({ mode: 'enforce', budget: 'economy', respectExplicitModel: false, routeNamedAgents: true })
+  const fromFile = parseConfig({ mode: 'enforce', budget: 'economy', backend: 'heuristic', respectExplicitModel: false, routeNamedAgents: true })
   assert.equal(fromFile.mode, 'enforce')
   assert.equal(fromFile.budget, 'economy')
+  assert.equal(fromFile.backend, 'heuristic')
   assert.equal(fromFile.respectExplicitModel, false)
   assert.equal(fromFile.routeNamedAgents, true)
-  const fromEnv = parseConfig({ mode: 'enforce' }, { TASKSHAPE_MODE: 'suggest', TASKSHAPE_BUDGET: 'standard', TASKSHAPE_COMMAND: '/opt/taskshape', TASKSHAPE_ROUTE_NAMED_AGENTS: 'true' })
+  const fromEnv = parseConfig({ mode: 'enforce', backend: 'laya' }, { TASKSHAPE_MODE: 'suggest', TASKSHAPE_BUDGET: 'standard', TASKSHAPE_BACKEND: 'heuristic', TASKSHAPE_COMMAND: '/opt/taskshape', TASKSHAPE_ROUTE_NAMED_AGENTS: 'true' })
   assert.equal(fromEnv.mode, 'suggest')
   assert.equal(fromEnv.budget, 'standard')
+  assert.equal(fromEnv.backend, 'heuristic')
   assert.equal(fromEnv.command, '/opt/taskshape')
   assert.equal(fromEnv.routeNamedAgents, true)
   assert.equal(parseConfig({ mode: 'bogus' }).mode, 'enforce', 'an unknown mode falls back to the default')
+  assert.equal(parseConfig({ backend: 'bogus' }).backend, 'laya', 'an unknown backend falls back to the default')
   assert.equal(DEFAULT_CONFIG.mode, 'enforce', 'installing is the whole setup: routing is on by default')
+  assert.equal(DEFAULT_CONFIG.backend, 'laya', 'Laya is the default router backend')
 })
 
 test('first run writes a ready-to-edit config file and never overwrites it', () => {
@@ -222,6 +239,17 @@ test('VS Code: enforce answers with hookSpecificOutput.updatedInput and the disp
   if (suggested.kind === 'suggest') assert.ok(suggested.decision.model_name?.endsWith(' (copilot)'))
 })
 
+test('Laya classifications route through the shared policy without heuristic recomputation', () => {
+  const out = outcomeFor(task('Fix only a typo'), enforce, layaDecide, table)
+  assert.equal(out.kind, 'enforce')
+  if (out.kind !== 'enforce' || !('modifiedArgs' in out.output)) assert.fail('expected a CLI rewrite')
+  assert.equal(out.decision.source, 'laya')
+  assert.equal(out.decision.shape, 'coupled')
+  assert.equal(out.decision.shape_probabilities?.coupled, 0.91)
+  assert.ok(['claude-sonnet-5.5', 'gpt-5.4'].includes(out.output.modifiedArgs.model as string))
+  assert.equal(out.output.modifiedArgs.reasoning_effort, 'high')
+})
+
 test('persistent audit files omit raw prompt and description for both harnesses and modes', () => {
   const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
   try {
@@ -344,6 +372,7 @@ const runHook = (script: string, payload: unknown, home: string, extraEnv: Recor
       TASKSHAPE_HOME: home,
       TASKSHAPE_MODE: 'enforce',
       TASKSHAPE_BUDGET: '',
+      TASKSHAPE_BACKEND: 'heuristic',
       TASKSHAPE_PROFILES: '',
       TASKSHAPE_COMMAND: '',
       TASKSHAPE_CONFIG: '',
@@ -354,13 +383,18 @@ const runHook = (script: string, payload: unknown, home: string, extraEnv: Recor
       ...extraEnv,
     } })
 
-const installPluginFixture = (dir: string): string => {
+const installPluginFixture = (dir: string, runtimeSource?: string): string => {
   const root = join(dir, "Task Shape O'Brien ü %23 # plugin")
   const hooks = join(root, 'hooks')
+  const runtime = join(root, 'runtime')
   mkdirSync(hooks, { recursive: true })
+  mkdirSync(runtime, { recursive: true })
   for (const name of ['discover.ts', 'harness.ts', 'policy.ts', 'pretooluse.ts', 'rubric.ts', 'sessionstart.ts', 'shapes.ts', 'subagentstop.ts']) {
     copyFileSync(join(here, name), join(hooks, name))
   }
+  for (const name of ['launch.sh', 'launch.ps1', 'runtime-cli.ts']) copyFileSync(join(here, name), join(hooks, name))
+  copyFileSync(nodeAssetsPath, join(runtime, 'node-assets.tsv'))
+  if (runtimeSource !== undefined) writeFileSync(join(hooks, 'runtime.ts'), runtimeSource)
   copyFileSync(profilesPath, join(root, 'profiles.copilot.json'))
   return hooks
 }
@@ -371,6 +405,29 @@ const allPersistedText = (home: string): string =>
       const path = join(home, name)
       return existsSync(path) ? readFileSync(path, 'utf8') : ''
     }).join('\n')
+
+const fakeNodeArchive = (dir: string, marker: string): { baseUrl: string; assets: string } => {
+  const platform = platformKey()
+  const version = '22.99.0'
+  const filename = `node-v${version}-${platform}.tar.xz`
+  const root = join(dir, `node-v${version}-${platform}`)
+  const bin = join(root, 'bin')
+  mkdirSync(bin, { recursive: true })
+  writeFileSync(join(bin, 'node'), `#!/bin/sh
+case " $* " in
+  *"runtime-cli.ts prepare "*) printf prepared > "${marker}"; exit 0;;
+esac
+if [ "$1" = "-e" ]; then exit 0; fi
+exec "${process.execPath}" "$@"
+`, { mode: 0o755 })
+  const made = spawnSync('tar', ['-cJf', join(dir, filename), '-C', dir, `node-v${version}-${platform}`], { encoding: 'utf8' })
+  assert.equal(made.status, 0, made.stderr)
+  const archive = readFileSync(join(dir, filename))
+  return {
+    baseUrl: `file://${dir}`,
+    assets: `# platform\tversion\tfilename\tsha256\n${platform}\t${version}\t${filename}\t${createHash('sha256').update(archive).digest('hex')}\n`,
+  }
+}
 
 test('end to end: the scripts answer both harnesses exactly as the hooks expect', () => {
   const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
@@ -451,6 +508,253 @@ test('end to end: an installed plugin path with spaces and URL characters still 
   }
 })
 
+test('launcher uses an existing Node runtime without changing hook stdin', { skip: !POSIX }, () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'taskshape-launch-'))
+  const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
+  try {
+    const hooks = installPluginFixture(tmp)
+    const ran = spawnSync('sh', [join(hooks, 'launch.sh'), 'pretooluse.ts'], {
+      input: JSON.stringify(task(COUPLED)), encoding: 'utf8',
+      env: { ...process.env, TASKSHAPE_HOME: home, TASKSHAPE_BACKEND: 'heuristic', TASKSHAPE_DISCOVER_MODELS: 'false' },
+    })
+    assert.equal(ran.status, 0, ran.stderr)
+    const out = JSON.parse(ran.stdout)
+    assert.equal(out.modifiedArgs.prompt, COUPLED)
+    assert.equal(out.modifiedArgs.reasoning_effort, 'high')
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('launcher bootstraps pinned private Node and starts runtime preparation without persisting stdin', { skip: !POSIX || platformKey() === 'unsupported' }, () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'taskshape-launch-bootstrap-'))
+  const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
+  try {
+    const hooks = installPluginFixture(tmp)
+    const marker = join(tmp, 'prepared.txt')
+    const fake = fakeNodeArchive(join(tmp, 'downloads'), marker)
+    writeFileSync(join(dirname(hooks), 'runtime', 'node-assets.tsv'), fake.assets)
+    const env = { ...process.env, TASKSHAPE_HOME: home, TASKSHAPE_BACKEND: 'heuristic', TASKSHAPE_DISCOVER_MODELS: 'false',
+      TASKSHAPE_FORCE_BUNDLED_NODE: '1', TASKSHAPE_NODE_BASE_URL: fake.baseUrl }
+    const first = spawnSync('sh', [join(hooks, 'launch.sh'), 'pretooluse.ts'], { input: JSON.stringify(task(SECRET_PROMPT)), encoding: 'utf8', env })
+    assert.equal(first.status, 0, first.stderr)
+    assert.equal(first.stdout, '')
+    assert.match(first.stderr, /preparing private Node.js runtime; original model kept/)
+    const deadline = Date.now() + 5000
+    while (!existsSync(marker) && Date.now() < deadline) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
+    }
+    assert.ok(existsSync(marker), 'Node bootstrap should start runtime-cli prepare after extraction')
+    assert.equal(existsSync(join(home, 'decisions.jsonl')), false, 'the skipped first launch must not persist the raw hook payload')
+    const second = spawnSync('sh', [join(hooks, 'launch.sh'), 'pretooluse.ts'], { input: JSON.stringify(task(COUPLED)), encoding: 'utf8', env })
+    assert.equal(second.status, 0, second.stderr)
+    assert.equal(JSON.parse(second.stdout).modifiedArgs.reasoning_effort, 'high')
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('launcher reports a failed private Node bootstrap instead of staying permanently pending', { skip: !POSIX || platformKey() === 'unsupported' }, () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'taskshape-launch-fail-'))
+  const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
+  try {
+    const hooks = installPluginFixture(tmp)
+    const marker = join(tmp, 'prepared.txt')
+    const fake = fakeNodeArchive(join(tmp, 'downloads'), marker)
+    writeFileSync(join(dirname(hooks), 'runtime', 'node-assets.tsv'), fake.assets.replace(/[a-f0-9]{64}/, '0'.repeat(64)))
+    const env = { ...process.env, TASKSHAPE_HOME: home, TASKSHAPE_BACKEND: 'heuristic', TASKSHAPE_DISCOVER_MODELS: 'false',
+      TASKSHAPE_FORCE_BUNDLED_NODE: '1', TASKSHAPE_NODE_BASE_URL: fake.baseUrl }
+    const first = spawnSync('sh', [join(hooks, 'launch.sh'), 'pretooluse.ts'], { input: JSON.stringify(task(COUPLED)), encoding: 'utf8', env })
+    assert.equal(first.status, 0, first.stderr)
+    assert.match(first.stderr, /preparing private Node.js runtime/)
+    const status = join(home, 'node', 'status.txt')
+    const deadline = Date.now() + 5000
+    while ((!existsSync(status) || !readFileSync(status, 'utf8').startsWith('error:')) && Date.now() < deadline) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
+    }
+    assert.match(readFileSync(status, 'utf8'), /checksum mismatch/)
+    const second = spawnSync('sh', [join(hooks, 'launch.sh'), 'pretooluse.ts'], { input: JSON.stringify(task(COUPLED)), encoding: 'utf8', env })
+    assert.equal(second.status, 0, second.stderr)
+    assert.equal(second.stdout, '')
+    assert.match(second.stderr, /private Node.js setup failed: Node.js checksum mismatch; original model kept/)
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('plugin hook manifests invoke the Node bootstrap launchers', () => {
+  const vscodeManifest = [join(here, '..', 'vscode', 'hooks', 'hooks.json'), join(here, '..', '..', 'vscode', 'hooks', 'hooks.json')].find(p => existsSync(p)) as string
+  const copilotManifest = [join(here, '..', 'copilot', 'hooks.json'), join(here, '..', '..', 'copilot', 'hooks.json')].find(p => existsSync(p)) as string
+  const vscode = JSON.parse(readFileSync(vscodeManifest, 'utf8'))
+  const copilot = JSON.parse(readFileSync(copilotManifest, 'utf8'))
+  const vscodeHooks = [
+    vscode.hooks.PreToolUse[0].hooks[0],
+    vscode.hooks.SessionStart[0].hooks[0],
+    vscode.hooks.SubagentStop[0].hooks[0],
+  ]
+  for (const hook of vscodeHooks) {
+    assert.match(String(hook.bash ?? hook.command), new RegExp('hooks/launch\\.sh'))
+    assert.match(String(hook.powershell), new RegExp('launch\\.ps1'))
+    assert.doesNotMatch(String(hook.command), /^node /)
+  }
+  for (const event of ['sessionStart', 'preToolUse', 'subagentStop']) {
+    const hook = copilot.hooks[event][0]
+    assert.match(String(hook.bash), new RegExp('hooks/launch\\.sh'))
+    assert.match(String(hook.powershell), new RegExp('launch\\.ps1'))
+    assert.equal('exec' in hook, false)
+  }
+})
+
+test('default Laya backend keeps the original model when runtime is unavailable', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'taskshape-laya-missing-'))
+  const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
+  try {
+    const hooks = installPluginFixture(tmp)
+    const ran = runHook('pretooluse.ts', task('Own billing rollout and tests'), home, { TASKSHAPE_BACKEND: 'laya' }, hooks)
+    assert.equal(ran.status, 0, ran.stderr)
+    assert.equal(ran.stdout, '')
+    assert.match(ran.stderr, /Taskshape: laya unavailable: .*original model kept/)
+    const row = JSON.parse(readFileSync(join(home, 'decisions.jsonl'), 'utf8').trim())
+    assert.equal(row.mode, 'skipped')
+    assert.equal(row.backend, 'laya')
+    assert.match(row.error, /laya unavailable/)
+    assert.equal('model' in row, false)
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('Laya backend uses local classification metadata for Copilot and VS Code rewrites', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'taskshape-laya-ready-'))
+  const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
+  try {
+    const hooks = installPluginFixture(tmp, `
+      export const classifyLocal = async () => ({ source: 'laya', shape: 'coupled', answer_confidence: 0.91, shape_probabilities: { search: 0.01, simple: 0.02, debugging: 0.02, visual: 0.01, coupled: 0.91, architecture: 0.03 } })
+      export const ensureRuntime = async () => ({ state: 'ready', message: 'mock ready', python: 'py', checkpoint: 'ckpt' })
+    `)
+    const cli = runHook('pretooluse.ts', task('Fix only a typo'), home, { TASKSHAPE_BACKEND: 'laya' }, hooks)
+    assert.equal(cli.status, 0, cli.stderr)
+    const cliOut = JSON.parse(cli.stdout)
+    assert.ok(['claude-sonnet-5.5', 'gpt-5.4'].includes(cliOut.modifiedArgs.model))
+    assert.equal(cliOut.modifiedArgs.reasoning_effort, 'high')
+    const local = runHook('pretooluse.ts', sub('Fix only a typo'), home, { TASKSHAPE_BACKEND: 'laya' }, hooks)
+    assert.equal(local.status, 0, local.stderr)
+    assert.match(JSON.parse(local.stdout).hookSpecificOutput.updatedInput.model, /Claude Sonnet 5\.5|GPT-5\.4/)
+    const rows = readFileSync(join(home, 'decisions.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
+    assert.equal(rows.length, 2)
+    for (const row of rows) {
+      assert.equal(row.backend, 'laya')
+      assert.equal(row.source, 'laya')
+      assert.equal(row.shape, 'coupled')
+      assert.equal(row.shape_probabilities.coupled, 0.91)
+    }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('Laya backend does not fall back to heuristic routing after classification failure', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'taskshape-laya-fail-'))
+  const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
+  try {
+    const hooks = installPluginFixture(tmp, `
+      export const classifyLocal = async () => { throw new Error('mock runtime not ready') }
+      export const ensureRuntime = async () => ({ state: 'installing', message: 'mock installing' })
+    `)
+    const ran = runHook('pretooluse.ts', task(COUPLED), home, { TASKSHAPE_BACKEND: 'laya' }, hooks)
+    assert.equal(ran.status, 0, ran.stderr)
+    assert.equal(ran.stdout, '')
+    assert.match(ran.stderr, /mock runtime not ready.*original model kept/)
+    const row = JSON.parse(readFileSync(join(home, 'decisions.jsonl'), 'utf8').trim())
+    assert.equal(row.mode, 'skipped')
+    assert.equal(row.backend, 'laya')
+    assert.match(row.error, /mock runtime not ready/)
+    assert.equal('shape' in row, false)
+    assert.equal('model' in row, false)
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('command backend failures keep the original model and do not fall back to embedded routing', () => {
+  const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
+  try {
+    const ran = runHook('pretooluse.ts', task(COUPLED), home, { TASKSHAPE_COMMAND: join(home, 'missing-taskshape-command') })
+    assert.equal(ran.status, 0, ran.stderr)
+    assert.equal(ran.stdout, '')
+    assert.match(ran.stderr, /Taskshape: routing failed: .*original model kept/)
+    const row = JSON.parse(readFileSync(join(home, 'decisions.jsonl'), 'utf8').trim())
+    assert.equal(row.mode, 'skipped')
+    assert.equal(row.backend, 'command')
+    assert.match(row.error, /routing failed/)
+    assert.equal('shape' in row, false)
+    assert.equal('model' in row, false)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('command backend passes private prompt through stdin instead of argv', { skip: !POSIX }, () => {
+  const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
+  const bin = mkdtempSync(join(tmpdir(), 'taskshape-command-'))
+  const command = join(bin, 'taskshape-fake.mjs')
+  const capture = join(bin, 'capture.json')
+  try {
+    writeFileSync(command, `#!/usr/bin/env node
+import { readFileSync, writeFileSync } from 'node:fs'
+const stdin = readFileSync(0, 'utf8')
+writeFileSync(process.env.TASKSHAPE_CAPTURE, JSON.stringify({ argv: process.argv.slice(2), stdin }))
+process.stdout.write(JSON.stringify({ task: '', phase: 'work', shape: 'coupled', profile: 'sonnet', model: 'claude-sonnet-5.5', effort: 'high', reason: 'fake', source: 'fake', answer_confidence: 0.9, warnings: [] }))
+`, { mode: 0o755 })
+    const ran = runHook('pretooluse.ts', sub(SECRET_PROMPT, { description: SECRET_DESCRIPTION }), home, {
+      TASKSHAPE_COMMAND: command,
+      TASKSHAPE_CAPTURE: capture,
+    })
+    assert.equal(ran.status, 0, ran.stderr)
+    assert.equal(JSON.parse(ran.stdout).hookSpecificOutput.updatedInput.prompt, SECRET_PROMPT)
+    const recorded = JSON.parse(readFileSync(capture, 'utf8'))
+    assert.equal(recorded.stdin, SECRET_PROMPT)
+    assert.ok(recorded.argv.includes('--task-stdin'))
+    assert.equal(recorded.argv.includes('--task'), false)
+    assert.equal(JSON.stringify(recorded.argv).includes(SECRET_PROMPT), false)
+    assert.equal(allPersistedText(home).includes(SECRET_PROMPT), false)
+    assert.equal(allPersistedText(home).includes(SECRET_DESCRIPTION), false)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+    rmSync(bin, { recursive: true, force: true })
+  }
+})
+
+test('SessionStart starts Laya setup and reports status to VS Code context', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'taskshape-laya-start-'))
+  const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
+  try {
+    const hooks = installPluginFixture(tmp, `
+      export const ensureRuntime = async () => ({ state: 'installing', message: 'mock setup running', python: 'py', checkpoint: 'ckpt' })
+      export const classifyLocal = async () => { throw new Error('unused') }
+    `)
+    const cli = runHook('sessionstart.ts', { sessionId: 's1', cwd: '/', timestamp: 1, source: 'new' }, home, { TASKSHAPE_BACKEND: 'laya' }, hooks)
+    assert.equal(cli.status, 0, cli.stderr)
+    assert.equal(cli.stdout, '')
+    assert.match(cli.stderr, /taskshape runtime installing: mock setup running/)
+    const local = runHook('sessionstart.ts', { session_id: 'v1', source: 'new', model: 'gpt-5-mini' }, home, { TASKSHAPE_BACKEND: 'laya' }, hooks)
+    assert.equal(local.status, 0, local.stderr)
+    assert.match(local.stderr, /taskshape runtime installing: mock setup running/)
+    const out = JSON.parse(local.stdout)
+    assert.equal(out.hookSpecificOutput.hookEventName, 'SessionStart')
+    assert.match(out.hookSpecificOutput.additionalContext, /taskshape runtime installing: mock setup running/)
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
 test('end to end: SessionStart discovers the account models through the CLI and both harnesses route within them', { skip: !POSIX }, () => {
   const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
   try {
@@ -496,7 +800,7 @@ test('VS Code hooks.json: the shell pre-filter runs the hook only for runSubagen
   const command = String(entry.bash).replaceAll('${CLAUDE_PLUGIN_ROOT}', join(here, '..'))
   const home = mkdtempSync(join(tmpdir(), 'taskshape-home-'))
   try {
-    const env = { ...process.env, TASKSHAPE_HOME: home, TASKSHAPE_MODE: 'enforce', TASKSHAPE_COMMAND: '', TASKSHAPE_DISCOVER_MODELS: 'false' }
+    const env = { ...process.env, TASKSHAPE_HOME: home, TASKSHAPE_MODE: 'enforce', TASKSHAPE_BACKEND: 'heuristic', TASKSHAPE_COMMAND: '', TASKSHAPE_DISCOVER_MODELS: 'false' }
     const hit = spawnSync('sh', ['-c', command], { input: JSON.stringify(sub(COUPLED)), encoding: 'utf8', env })
     assert.equal(hit.status, 0, hit.stderr)
     assert.equal(JSON.parse(hit.stdout).hookSpecificOutput.permissionDecision, 'allow')
@@ -532,6 +836,7 @@ test('VS Code hooks.json: PowerShell pre-filter runs hooks from a plugin path wi
       TASKSHAPE_HOME: home,
       TASKSHAPE_MODE: 'enforce',
       TASKSHAPE_BUDGET: '',
+      TASKSHAPE_BACKEND: 'heuristic',
       TASKSHAPE_PROFILES: '',
       TASKSHAPE_COMMAND: '',
       TASKSHAPE_CONFIG: '',

@@ -7,10 +7,11 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import {
   DEFAULT_CONFIG, type Config, type Decide, type Decision, type HookInput, type LocalInput, appendLine, applyCatalog, dataDir, dataPaths,
-  detectHarness, ensureConfig, loadProfilesFrom, originFor, outcomeFor, parseConfig, readJson, routeEmbedded, sessionModel, writeJson,
+  detectHarness, ensureConfig, loadProfilesFrom, originFor, outcomeFor, parseConfig, readJson, routeClassified, routeEmbedded, sessionModel, writeJson,
 } from './harness.ts'
 import { refreshCatalog } from './discover.ts'
 import type { Profile } from './policy.ts'
+import type { Shape } from './shapes.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const bundledProfilesPath = (): string =>
@@ -18,15 +19,44 @@ const bundledProfilesPath = (): string =>
     ?? join(here, '..', 'profiles.copilot.json')
 
 const routeWithCli = (config: Config, profilesPath: string, prompt: string, candidates: readonly Profile[], all: readonly Profile[]): Decision => {
-  const argv = ['route', '--profiles', profilesPath, '--budget', config.budget, '--phase', 'work', '--task', prompt, '--origin', 'copilot-plugin']
+  const argv = ['route', '--profiles', profilesPath, '--budget', config.budget, '--phase', 'work', '--task-stdin', '--origin', 'copilot-plugin']
   if (config.config) argv.push('--config', config.config)
   if (candidates.length !== all.length) argv.push('--allowed', candidates.map(p => p.id).join(','))
-  const ran = spawnSync(config.command, argv, { encoding: 'utf8', timeout: 25000 })
-  if (ran.status !== 0) throw new Error((ran.stderr || `exit ${ran.status}`).trim().slice(0, 200))
-  const parsed = JSON.parse(ran.stdout) as Decision
+  const ran = spawnSync(config.command, argv, { input: prompt, encoding: 'utf8', timeout: 25000 })
+  if (ran.status !== 0) throw new Error('taskshape command failed; original model kept')
+  let parsed: Decision
+  try { parsed = JSON.parse(ran.stdout) as Decision } catch { throw new Error('taskshape command returned invalid JSON') }
   parsed.source = `cli:${parsed.source}`
   return parsed
 }
+
+type LayaClassification = { shape: Shape; answer_confidence: number; shape_probabilities?: Record<string, number>; source: 'laya' }
+
+const classifyWithLaya = async (prompt: string): Promise<LayaClassification> => {
+  const runtime = await import('./runtime.ts') as { classifyLocal: (prompt: string) => Promise<LayaClassification> }
+  return runtime.classifyLocal(prompt)
+}
+
+const promptToClassify = (input: HookInput, config: Config, harness: ReturnType<typeof detectHarness>): string | undefined => {
+  if (harness === 'copilot-cli') {
+    const args = (input as { toolName?: string; toolArgs?: Record<string, unknown> }).toolArgs ?? {}
+    if ((input as { toolName?: string }).toolName !== 'task') return undefined
+    if (typeof args.prompt !== 'string' || !args.prompt.trim()) return undefined
+    if (config.respectExplicitModel && typeof args.model === 'string' && args.model && args.model !== 'auto') return undefined
+    return args.prompt
+  }
+  if (harness === 'vscode-local') {
+    const args = (input as LocalInput).tool_input ?? {}
+    if ((input as LocalInput).tool_name !== 'runSubagent') return undefined
+    if (typeof args.prompt !== 'string' || !args.prompt.trim()) return undefined
+    if (config.respectExplicitModel && typeof args.model === 'string' && args.model.trim()) return undefined
+    if (!config.routeNamedAgents && typeof args.agentName === 'string' && args.agentName.trim()) return undefined
+    return args.prompt
+  }
+  return undefined
+}
+
+const errorText = (error: unknown): string => String(error instanceof Error ? error.message : error).slice(0, 200)
 
 const main = async () => {
   let input: HookInput
@@ -56,22 +86,40 @@ const main = async () => {
   const applied = applyCatalog(shipped, catalog)
   const table = applied.table
   if (applied.warning) warnings.push(applied.warning)
+  const sessionId = harness === 'vscode-local' ? (input as LocalInput).session_id : (input as { sessionId?: string }).sessionId
+  const mainModel = harness === 'vscode-local' ? sessionModel(paths.sessions, sessionId) : undefined
+  let classification: LayaClassification | undefined
+  const classifyPrompt = config.command || config.backend === 'heuristic' ? undefined : promptToClassify(input, config, harness)
+  if (classifyPrompt) {
+    try {
+      classification = await classifyWithLaya(classifyPrompt)
+    } catch (error) {
+      process.stderr.write(`Taskshape: laya unavailable: ${errorText(error)}; original model kept\n`)
+      appendLine(paths.decisions, { ts: Date.now() / 1000, origin, harness, mode: 'skipped', sessionId: sessionId ?? null,
+        backend: config.backend, error: `laya unavailable: ${errorText(error)}` })
+      return
+    }
+  }
   const decide: Decide = (prompt, candidates) => {
     if (config.command) {
-      try {
-        return routeWithCli(config, profilesPath, prompt, candidates, shipped.profiles)
-      } catch (error) {
-        warnings.push(`taskshape command failed: ${String(error).slice(0, 120)}`)
-        const fallback = routeEmbedded(prompt, 'work', table, config.budget, candidates)
-        fallback.source = 'rubric-fallback'
-        return fallback
-      }
+      return routeWithCli(config, profilesPath, prompt, candidates, shipped.profiles)
+    }
+    if (config.backend === 'laya') {
+      if (!classification) throw new Error('laya classification was not prepared')
+      return routeClassified(prompt, 'work', table, config.budget, classification.shape, classification.answer_confidence,
+        classification.source, candidates, classification.shape_probabilities)
     }
     return routeEmbedded(prompt, 'work', table, config.budget, candidates)
   }
-  const sessionId = harness === 'vscode-local' ? (input as LocalInput).session_id : (input as { sessionId?: string }).sessionId
-  const mainModel = harness === 'vscode-local' ? sessionModel(paths.sessions, sessionId) : undefined
-  const outcome = outcomeFor(input, config, decide, table, mainModel)
+  let outcome
+  try {
+    outcome = outcomeFor(input, config, decide, table, mainModel)
+  } catch (error) {
+    process.stderr.write(`Taskshape: routing failed: ${errorText(error)}; original model kept\n`)
+    appendLine(paths.decisions, { ts: Date.now() / 1000, origin, harness, mode: 'skipped', sessionId: sessionId ?? null,
+      backend: config.command ? 'command' : config.backend, error: `routing failed: ${errorText(error)}` })
+    return
+  }
   if (outcome.kind === 'skip') {
     appendLine(paths.decisions, { ts: Date.now() / 1000, origin, harness, mode: 'skipped', why: outcome.why, sessionId: sessionId ?? null })
     return
@@ -82,6 +130,7 @@ const main = async () => {
   const row = { ts: Date.now() / 1000, origin, harness, mode: outcome.kind === 'enforce' ? 'enforced' : 'suggested', sessionId: sessionId ?? null,
     phase: decision.phase, shape: decision.shape, profile: decision.profile, model: decision.model, model_name: decision.model_name ?? null,
     effort: decision.effort, answer_confidence: decision.answer_confidence, source: decision.source, reason: decision.reason, warnings: decision.warnings,
+    backend: config.command ? 'command' : config.backend, shape_probabilities: decision.shape_probabilities ?? null,
     main_model: mainModel ?? null, agent_type: (args.agent_type as string | undefined) ?? (args.agentName as string | undefined) ?? null,
     catalog: catalog && Object.keys(catalog.models).length > 0 ? { source: catalog.source, ts: catalog.ts, models: Object.keys(catalog.models).length, error: catalog.error ?? null } : null,
     unavailable_profiles: applied.dropped }

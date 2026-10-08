@@ -9,12 +9,18 @@
     {
       "name": "taskshape",
       "source": "./plugins/claude-code",
-      "description": "Routes every sub-agent launch: suggest mode logs the decision, enforce mode rewrites the model. Works out of the box with built-in Claude profiles; add the Python package for Laya, the lab and the MCP server.",
-      "version": "0.1.0",
+      "description": "Route sub-agent launches with local Laya. Python, CPU dependencies and the model are prepared automatically on first use. Requires Node 22.6+.",
+      "version": "0.2.0",
       "author": {
         "name": "Alexandre Amorim"
       },
-      "keywords": ["routing", "cost", "sub-agents", "models", "laya"],
+      "keywords": [
+        "routing",
+        "cost",
+        "sub-agents",
+        "models",
+        "laya"
+      ],
       "category": "workflow"
     }
   ]

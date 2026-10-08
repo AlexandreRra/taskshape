@@ -1,0 +1,45 @@
+{
+  "device": "cpu",
+  "base_checkpoint": "checkpoints/public-multilingual",
+  "base_sha256": "9d628fd971b700382ac6f65920a86f149777b2e748e0c955fb3b19695aa8f204",
+  "train_dataset": "checkpoints/public-multilingual/public-routing-inputs/train.jsonl",
+  "train_sha256": "4a19ea34d00ee5e9b9b4feb7766220fd5c2ba66b514169ec7811b9ce64f029df",
+  "rows": 160,
+  "train_rows": 136,
+  "calib_rows": 24,
+  "train_items": 136,
+  "calib_items": 24,
+  "items_skipped": 0,
+  "epochs": 4,
+  "micro_batch": 2,
+  "grad_accum": 4,
+  "updates": 68,
+  "train_top_layers": 0,
+  "seed": 20261008,
+  "encoder_layers": 22,
+  "trainable_parameters": 14771713,
+  "frozen_parameters": 307137282,
+  "epoch_loss": [
+    1.7356,
+    1.4458,
+    1.6303,
+    1.6652
+  ],
+  "started_at": 1791473207.5364032,
+  "finished_at": 1791474011.6661623,
+  "seconds": 804.1,
+  "choice_temperature": 1.3321986198425293,
+  "bucket_temperatures": {
+    "choice:6-10": 0.5
+  },
+  "output_sha256": "640f11f7ee9367819aa925e1635324bbbff2c42508ffc4841f44717ebec85686",
+  "peak_memory_bytes": null,
+  "label_source": "agent-authored synthetic-curated; not independently human-validated",
+  "source_train_sha256": "8b3b9a7ca3ac3fe3ff33b55a7b8fd53405d8b2bed59e6480fe75d63824d41949",
+  "packages": {
+    "laya": "0.3.28",
+    "torch": "2.14.1+cpu",
+    "transformers": "5.18.0",
+    "safetensors": "0.8.0"
+  }
+}
