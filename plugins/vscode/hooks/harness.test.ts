@@ -621,6 +621,7 @@ test('Windows launchers preserve UTF-8 hook input through PowerShell 5 and 7', {
         env: { ...process.env, TASKSHAPE_HOME: home, TASKSHAPE_FORCE_BUNDLED_NODE: '', TASKSHAPE_REQUIRE_BUNDLED_NODE: '' },
       })
       assert.equal(result.status, 0, `${shell}: ${result.stderr}`)
+      assert.ok(result.stdout.trim(), `${shell}: ${result.stderr || 'The hook produced no output'}`)
       assert.deepEqual(JSON.parse(result.stdout), payload, shell)
     }
   } finally {

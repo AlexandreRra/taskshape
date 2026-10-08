@@ -1,4 +1,5 @@
-param([string]$Script, [Parameter(ValueFromRemainingArguments=$true)][string[]]$Rest)
+param([string]$Script, [Parameter(ValueFromRemainingArguments=$true)][string[]]$Rest,
+  [Parameter(ValueFromPipeline=$true)][string]$PipelinePayload)
 $ErrorActionPreference = 'Stop'
 $NeedMajor = 22
 $NeedMinor = 6
@@ -14,7 +15,7 @@ $OutputEncoding = [Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = $OutputEncoding
 $HookInput = ''
 if ($Script -ne '--install-node') {
-  $PipelineText = @($input) -join [Environment]::NewLine
+  $PipelineText = if ($PipelinePayload) { $PipelinePayload } else { @($input) -join [Environment]::NewLine }
   $HookInput = if ($PipelineText.Length -gt 0) { $PipelineText } else { [Console]::In.ReadToEnd() }
 }
 

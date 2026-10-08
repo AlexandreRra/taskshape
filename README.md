@@ -194,7 +194,7 @@ Brief rows are JSONL objects with `task`, optional `phase`, optional human `shap
 
 This is pre-alpha software. The shipped profile and catalog files are examples and may need updates to match the models available through your provider plan.
 
-The managed plugin runtime has dry-run coverage for Linux x64, Linux ARM64, Windows x64, Windows ARM64, and macOS 14 or later on ARM64. macOS Intel is unsupported by the pinned ML runtime. POSIX hosts need `sh`, `tar`, `curl` or `wget`, and a SHA-256 helper such as `sha256sum`, `shasum`, or `openssl`. Windows hosts need PowerShell and `tar`. Full runtime CI across all supported operating systems is still pending.
+Fresh installation and offline Laya inference pass in [runtime CI](.github/workflows/runtime.yml) on Linux x64, Windows x64, and macOS 15 ARM64. Linux ARM64 and Windows ARM64 currently have dependency-resolution checks only. The pinned ML runtime requires macOS 14 or later on ARM64; macOS Intel is unsupported. POSIX hosts need `sh`, `tar`, `curl` or `wget`, and a SHA-256 helper such as `sha256sum`, `shasum`, or `openssl`. Windows hosts need PowerShell and `tar`.
 
 The rubric backend uses fixed classification rules. The Laya backend uses local model files and still depends on the task wording and the training data behind the checkpoint. No task-specialized checkpoint has passed adoption yet. Shape classification is not a guarantee that a provider model will complete the task. Cost estimates are available only when the catalog has verified prices for the selected model. Provider plans and host hook behavior can change; see the plugin READMEs for host-specific details.
 

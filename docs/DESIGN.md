@@ -139,7 +139,7 @@ There is no Codex adapter in this repository.
 
 ## Platform support
 
-The managed plugin runtime has dry-run coverage for Linux x64, Linux ARM64, Windows x64, Windows ARM64, and macOS 14 or later on ARM64. macOS Intel is unsupported by the pinned ML runtime. Alpine/Linux musl is unsupported. POSIX launchers require `sh`, `tar`, a downloader (`curl` or `wget`), and a SHA-256 helper (`sha256sum`, `shasum`, or `openssl`). Windows launchers require PowerShell and `tar`. Full runtime CI across the supported operating systems is still pending.
+Fresh installation and offline Laya inference pass in [runtime CI](../.github/workflows/runtime.yml) on Linux x64, Windows x64, and macOS 15 ARM64. Linux ARM64 and Windows ARM64 currently have dependency-resolution checks only. The pinned ML runtime requires macOS 14 or later on ARM64; macOS Intel and Alpine/Linux musl are unsupported. POSIX launchers require `sh`, `tar`, a downloader (`curl` or `wget`), and a SHA-256 helper (`sha256sum`, `shasum`, or `openssl`). Windows launchers require PowerShell and `tar`.
 
 ## Limits
 
