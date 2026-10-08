@@ -9,8 +9,9 @@ import re
 
 from .shapes import SHAPES, shapes_for
 
-CITED = re.compile(r"\b(applies|applying|per|source|sources|see|follow|follows|following|against|cites?|cited|"
-                   r"references?|referenced|according to)\b[^.;:\n]*", re.I)
+# Only the reference itself is removed ("per the migration guide", "RFC-7", "§4.2"), never the rest of the sentence.
+CITED = re.compile(r"(?:\b(?:(?:applies|applying|conforms? to|cites?|cited|per|see|according to)\s+(?:the\s+)?(?:[\w-]+\s+)?"
+                   r"(?:spec|specification|rfc|adr|docs?|documentation|guide|ticket|section)\b|rfc[- ]?\d+\b)|§\s*[\d.]+)", re.I)
 NEGATED_AFTER = re.compile(r"\b(no|not|never|without|cannot|must not|do not|does not|don't)\b[^.;,\n]{0,60}", re.I)
 NEGATED_BEFORE = re.compile(r"[^.;,\n]{0,40}\b(untouched|unchanged|unaffected|out of scope|preserved|as is)\b", re.I)
 
@@ -24,7 +25,7 @@ ROLE_HINTS = {
 CUES = {
     # matched on the cleaned text
     "architecture": r"\b(plan|write|author|draft|produce|own)\b[^.;]{0,60}\b(prd|spec|specification|rfc|adr|design doc)\b|\barchitecture\b|\barchitect\b|design (decision|review|approach)|tradeoffs?|dispute|requirements? analysis|roadmap|milestone plan",
-    "coupled": r"\bsaves?\b|persist|schema|migration|serializ|\breplay\b|data loss|corrupt|idempoten|transaction|concurren|\brace\b|thread|deadlock|lock|security|auth\w*|permission|several (files|systems|services)|cross-service|coupled|high[- ]risk|root[- ]cause|diagnos|hypothes[ie]s|regression (isolation|strategy)|duplicate[d]? (rewards?|charges?|events?)",
+    "coupled": r"persist|schema|migration|serializ|\breplay\b|data loss|corrupt|idempoten|transaction|concurren|\brace\b|thread|deadlock|\block(s|ed|ing)?\b|security|authori[sz]\w*|authent\w*|\bauthn\b|\bauthz\b|\boauth\d*\b|\bauth\b|permission|several (files|systems|services)|cross-service|coupled|high[- ]risk|root[- ]cause|diagnos|hypothes[ie]s|regression (isolation|strategy)|duplicate[d]? (rewards?|charges?|events?)",
     "escalation": r"two (unsuccessful|failed|materially)|third attempt|escalat|second independent review|disput",
     "visual": r"screenshot|mockup|wireframe|pixel[- ]art|sprite|visual (review|design|polish)|layout review|asset review|\bui design\b|figma|png\b",
     # matched on the raw text

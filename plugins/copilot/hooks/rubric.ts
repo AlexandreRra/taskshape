@@ -3,7 +3,8 @@
 // coupled or architecture cues, so "applies RFC-7" or "no schema changes" cannot escalate a brief.
 import { type Phase, type Shape, shapesFor } from './shapes.ts'
 
-const CITED = /\b(applies|applying|per|source|sources|see|follow|follows|following|against|cites?|cited|references?|referenced|according to)\b[^.;:\n]*/gi
+// Only the reference itself is removed ("per the migration guide", "RFC-7", "§4.2"), never the rest of the sentence.
+const CITED = /(?:\b(?:(?:applies|applying|conforms? to|cites?|cited|per|see|according to)\s+(?:the\s+)?(?:[\w-]+\s+)?(?:spec|specification|rfc|adr|docs?|documentation|guide|ticket|section)\b|rfc[- ]?\d+\b)|§\s*[\d.]+)/gi
 const NEGATED_AFTER = /\b(no|not|never|without|cannot|must not|do not|does not|don't)\b[^.;,\n]{0,60}/gi
 const NEGATED_BEFORE = /[^.;,\n]{0,40}\b(untouched|unchanged|unaffected|out of scope|preserved|as is)\b/gi
 
@@ -17,7 +18,7 @@ export const ROLE_HINTS: Record<string, Shape | null> = {
 const CUES = {
   // matched on the cleaned text
   architecture: /\b(plan|write|author|draft|produce|own)\b[^.;]{0,60}\b(prd|spec|specification|rfc|adr|design doc)\b|\barchitecture\b|\barchitect\b|design (decision|review|approach)|tradeoffs?|dispute|requirements? analysis|roadmap|milestone plan/i,
-  coupled: /\bsaves?\b|persist|schema|migration|serializ|\breplay\b|data loss|corrupt|idempoten|transaction|concurren|\brace\b|thread|deadlock|lock|security|auth\w*|permission|several (files|systems|services)|cross-service|coupled|high[- ]risk|root[- ]cause|diagnos|hypothes[ie]s|regression (isolation|strategy)|duplicate[d]? (rewards?|charges?|events?)/i,
+  coupled: /persist|schema|migration|serializ|\breplay\b|data loss|corrupt|idempoten|transaction|concurren|\brace\b|thread|deadlock|\block(s|ed|ing)?\b|security|authori[sz]\w*|authent\w*|\bauthn\b|\bauthz\b|\boauth\d*\b|\bauth\b|permission|several (files|systems|services)|cross-service|coupled|high[- ]risk|root[- ]cause|diagnos|hypothes[ie]s|regression (isolation|strategy)|duplicate[d]? (rewards?|charges?|events?)/i,
   escalation: /two (unsuccessful|failed|materially)|third attempt|escalat|second independent review|disput/i,
   visual: /screenshot|mockup|wireframe|pixel[- ]art|sprite|visual (review|design|polish)|layout review|asset review|\bui design\b|figma|png\b/i,
   // matched on the raw text
