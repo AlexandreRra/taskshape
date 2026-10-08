@@ -29,8 +29,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-15]
-    env:
-      TASKSHAPE_HOME: ${{ runner.temp }}/taskshape-fresh-runtime
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -40,10 +38,16 @@ jobs:
           node-version: 22.x
       - name: Prepare bundled Node (Linux and macOS)
         if: runner.os != 'Windows'
+        env:
+          TASKSHAPE_HOME: ${{ runner.temp }}/taskshape-fresh-runtime
         run: sh plugins/vscode/hooks/launch.sh --install-node
       - name: Prepare bundled Node (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          TASKSHAPE_HOME: ${{ runner.temp }}/taskshape-fresh-runtime
         run: '& ./plugins/vscode/hooks/launch.ps1 --install-node'
       - name: Install private Python and run offline Laya inference
+        env:
+          TASKSHAPE_HOME: ${{ runner.temp }}/taskshape-fresh-runtime
         run: node --no-warnings --experimental-strip-types scripts/smoke-runtime.ts
